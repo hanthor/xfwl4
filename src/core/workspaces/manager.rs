@@ -727,7 +727,7 @@ impl<BackendData: Backend + 'static> WorkspaceManager<BackendData> {
         }
     }
 
-    pub(super) fn move_window_by_index(&mut self, window: &WindowElement, old_index: u32, new_index: u32) -> bool {
+    pub fn move_window_by_index(&mut self, window: &WindowElement, old_index: u32, new_index: u32) -> bool {
         let count = self.workspaces.len() as u32;
         if old_index < count && new_index < count && old_index != new_index {
             let mut props = window.props();

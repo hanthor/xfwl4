@@ -305,10 +305,7 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
                 .window_type()
                 .is_some_and(|ty| !matches!(ty, WmWindowType::Normal | WmWindowType::Dialog)))
             && (x.is_some() || y.is_some())
-        {
-            // Allow these sorts of windows to set their own position.
-
-            if let Some((window, _, workspace)) = self
+            && let Some((window, _, workspace)) = self
                 .core
                 .workspace_manager
                 .find_window_and_workspace_mut(|elem| elem.0.x11_surface() == Some(&surface))
