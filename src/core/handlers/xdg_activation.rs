@@ -108,7 +108,8 @@ impl<BackendData: Backend> XdgActivationHandler for Xfwl4State<BackendData> {
     }
 
     fn request_activation(&mut self, _token: XdgActivationToken, token_data: XdgActivationTokenData, surface: WlSurface) {
-        if let Some((window, _, workspace)) = self
+        let active_workspace_index = self.core.workspace_manager.active_workspace_index();
+        if let Some((window, index, workspace)) = self
             .core
             .workspace_manager
             .find_window_and_workspace_mut(|elem| elem.wl_surface().is_some_and(|elem_surface| elem_surface.as_ref() == &surface))
@@ -120,27 +121,53 @@ impl<BackendData: Backend> XdgActivationHandler for Xfwl4State<BackendData> {
                 .and_then(|seat| seat.get_keyboard())
                 .and_then(|keyboard| keyboard.current_focus());
 
-        if do_activate {
-            let active_workspace_index = self.core.workspace_manager.active_workspace_index();
-            if let Some((window, index, _)) = self
-                .core
-                .workspace_manager
-                .find_window_and_workspace_mut(|elem| elem.wl_surface().is_some_and(|elem_surface| elem_surface.as_ref() == &surface))
-            {
-                let raise_on_focus = self.core.config.raise_on_focus();
-                let seat = token_data.serial.and_then(|(_, seat)| Seat::from_resource(&seat));
+            if current_focus == Some(window.clone().into()) {
+                // Window is already focused; nothing to do.
+            } else {
+                let do_activate = if !self.core.config.prevent_focus_stealing() {
+                    true
+                } else {
+                    // This may be too strict, but we can see...
+                    let extra_data = token_data.user_data.get::<ActivationTokenExtraData>();
+                    token_data.timestamp.elapsed() < MAX_TOKEN_LIFETIME
+                        && extra_data.is_some_and(|extra_data| {
+                            extra_data.serial_is_from_current_focus.unwrap_or(false) && extra_data.surface_is_focused.unwrap_or(false)
+                        })
+                };
 
-                if do_activate {
+                let needs_urgent = if do_activate {
                     let raise_on_focus = self.core.config.raise_on_focus();
                     let seat = token_data.serial.and_then(|(_, seat)| Seat::from_resource(&seat));
-                    self.activate_window(&window, raise_on_focus, true, seat);
+
+                    self.activate_window(&window, raise_on_focus, seat);
+
+                    if index != active_workspace_index {
+                        match self.core.config.activate_action() {
+                            ActivateAction::None => true,
+                            ActivateAction::Bring => {
+                                self.core
+                                    .workspace_manager
+                                    .move_window_by_index(&window, index, active_workspace_index);
+                                false
+                            }
+                            ActivateAction::Switch => {
+                                self.set_active_workspace(index);
+                                false
+                            }
+                        }
+                    } else {
+                        false
+                    }
                 } else {
                     if let Some(topmost_window) = workspace.visible_windows().last().cloned() {
                         workspace.lower_window_below(&window, &topmost_window);
                     } else {
                         workspace.raise_window(&window, false);
                     }
+                    true
+                };
 
+                if needs_urgent {
                     self.set_window_urgent_state(&window, true);
                 }
             }
