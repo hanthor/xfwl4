@@ -80,7 +80,7 @@ use smithay::{
         wayland_protocols::{wp::presentation_time::server::wp_presentation_feedback, xdg::shell::server::xdg_toplevel},
         wayland_server::{Resource, protocol::wl_surface::WlSurface},
     },
-    utils::{IsAlive, Logical, Monotonic, Physical, Point, Rectangle, Scale, Serial, Size, Time, user_data::UserDataMap},
+    utils::{IsAlive, Logical, Monotonic, Physical, Point, Rectangle, Scale, Serial, Time, user_data::UserDataMap},
     wayland::{
         compositor::{self, SurfaceData as WlSurfaceData},
         dmabuf::DmabufFeedback,
@@ -99,7 +99,11 @@ use crate::{
         shell::{
             SurfaceData, TileMode, WindowLayout, WindowProps, WindowPropsInner, WindowState, WorkspaceLocation,
             grabs::{ResizeEdge, ResizeState},
-            xdg::{XdgSurfaceProps, app_id_for_xdg_toplevel, window_title_for_xdg_toplevel},
+            x11::X11ClientId,
+            xdg::{
+                XdgSurfaceProps, app_id_for_xdg_toplevel, desktop_app_info_for_xdg_toplevel, icon_for_xdg_toplevel,
+                window_title_for_xdg_toplevel,
+            },
         },
         state::Xfwl4State,
         util::BTN_LEFT,
@@ -229,9 +233,8 @@ impl WindowElement {
             .0
     }
 
-    #[cfg(feature = "xwayland")]
-    pub fn x11_client_id(&self) -> Option<&crate::core::shell::x11::X11ClientId> {
-        self.0.user_data().get::<crate::core::shell::x11::X11ClientId>()
+    pub fn x11_client_id(&self) -> Option<&X11ClientId> {
+        self.0.user_data().get::<X11ClientId>()
     }
 
     // Smithay's WindowFocus::same_client_as() is only about the *Wayland* client; for X11 windows,
@@ -254,7 +257,6 @@ impl WindowElement {
         }
     }
 
-    #[cfg_attr(not(feature = "xwayland"), allow(unused))]
     pub(in crate::core) fn last_user_interaction(&self) -> Option<Time<Monotonic>> {
         self.props().last_user_interaction
     }

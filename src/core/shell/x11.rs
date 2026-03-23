@@ -106,6 +106,9 @@ pub struct X11WindowPropsInner {
 #[derive(Debug, Default)]
 pub struct X11WindowProps(pub Mutex<X11WindowPropsInner>);
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct X11ClientId(pub u32);
+
 impl<BackendData: Backend> XWaylandShellHandler for Xfwl4State<BackendData> {
     fn xwayland_shell_state(&mut self) -> &mut XWaylandShellState {
         &mut self.core.shell_protocol_delegates.xwayland_shell_state
@@ -165,7 +168,16 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
                 )
             });
 
-            let _ = surface.set_mapped(true);
+        surface.set_mapped(true).unwrap();
+        surface
+            .user_data()
+            .insert_if_missing(|| X11ClientId(surface.window_id() & self.core.x11_client_mask));
+        let window = WindowElement::new(
+            Window::new_x11_window(surface.clone()),
+            self.core.next_window_id(),
+            &self.core.config,
+        );
+        self.set_window_parent(&window, parent.clone());
 
             self.set_window_parent(&window, parent.clone());
 
@@ -223,20 +235,12 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
     }
 
     fn mapped_override_redirect_window(&mut self, _xwm: XwmId, surface: X11Surface) {
-        if let Some(window) = self
-            .core
-            .xwayland
-            .as_mut()
-            .and_then(|xw| xw.remove_pending_window(surface.window_id()))
-            .or_else(|| {
-                self.core
-                    .workspace_manager
-                    .find_window(|elem| matches!(elem.0.x11_surface(), Some(s) if s == &surface))
-            })
-        {
-            let location = surface.last_configure().loc;
-            self.new_window(window, location, true, None);
-        }
+        let location = surface.geometry().loc;
+        surface
+            .user_data()
+            .insert_if_missing(|| X11ClientId(surface.window_id() & self.core.x11_client_mask));
+        let window = WindowElement::new(Window::new_x11_window(surface), self.core.next_window_id(), &self.core.config);
+        self.new_window(window, location, true, None);
     }
 
     fn unmapped_window(&mut self, _xwm: XwmId, window: X11Surface) {

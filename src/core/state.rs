@@ -71,7 +71,7 @@ use smithay::{
             protocol::wl_surface::WlSurface,
         },
     },
-    utils::{Clock, Logical, Monotonic, Point, Time},
+    utils::{Clock, Monotonic, Point, Time},
     wayland::{
         alpha_modifier::AlphaModifierState,
         commit_timing::CommitTimingManagerState,
@@ -255,7 +255,11 @@ pub struct Xfwl4Core<BackendData: Backend + 'static> {
     #[cfg(feature = "xwayland")]
     pub(in crate::core) xwayland_crash_history: crate::core::x11_wm::XWaylandCrashHistory,
     #[cfg(feature = "xwayland")]
-    pub(in crate::core) xwayland: Option<crate::core::x11_wm::X11>,
+    pub(in crate::core) xdisplay: Option<u32>,
+    #[cfg(feature = "xwayland")]
+    pub(in crate::core) x11conn: Option<(x11rb::rust_connection::RustConnection, usize)>,
+    #[cfg(feature = "xwayland")]
+    pub(in crate::core) x11_client_mask: u32,
 
     #[cfg(feature = "debug")]
     pub renderdoc: Option<renderdoc::RenderDoc<renderdoc::V141>>,
@@ -534,8 +538,11 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                 #[cfg(feature = "xwayland")]
                 xwayland_crash_history: Default::default(),
                 #[cfg(feature = "xwayland")]
-                xwayland: None,
-
+                xdisplay: None,
+                #[cfg(feature = "xwayland")]
+                x11conn: None,
+                #[cfg(feature = "xwayland")]
+                x11_client_mask: 0,
                 #[cfg(feature = "debug")]
                 renderdoc: renderdoc::RenderDoc::new().ok(),
             },
@@ -618,48 +625,51 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                     } => {
                         use crate::core::x11_wm::X11;
 
-                        if let Some(token) = xwayland_token.borrow_mut().take() {
-                            match X11::new(
-                                display_number,
-                                client.clone(),
-                                x11_socket,
-                                token,
-                                data.core.handle.clone(),
-                                &data.core.display_handle,
-                            ) {
-                                Ok(x11) => {
-                                    data.core.xwayland = Some(x11);
-                                    data.x11_init_xsettings();
-                                    data.x11_update_scale();
-                                    data.x11_update_workspace_count(data.core.workspace_manager.workspaces().len() as u32);
-                                    data.x11_update_workspace_names(data.core.workspace_manager.workspace_names());
-                                    data.x11_update_workspace_layout(data.core.workspace_manager.geometry());
-                                    data.x11_update_active_workspace(data.core.workspace_manager.active_workspace_index());
-                                    data.x11_update_desktop_geometry();
-                                    data.x11_update_workarea();
-                                    data.x11_update_xrm_xft();
-                                    data.x11_update_xrm_xcursor();
-                                    data.x11_update_scale();
-                                    data.x11_set_showing_desktop(data.core.showing_desktop);
-                                }
+                    let cursor = data
+                        .core
+                        .cursor_theme
+                        .load_cursor(CursorName::Default)
+                        .unwrap_or_else(|_| data.core.cursor_theme.fallback_cursor());
+                    let (image, _) = cursor.get_image(1, Duration::ZERO);
+                    wm.set_cursor(
+                        &image.pixels_rgba,
+                        Size::from((image.width as u16, image.height as u16)),
+                        Point::from((image.xhot as u16, image.yhot as u16)),
+                    )
+                    .expect("Failed to set xwayland default cursor");
+                    data.core.xwm = Some(wm);
+                    data.core.xdisplay = Some(display_number);
 
-                                Err(err) => tracing::warn!("Failed initialize XWayland: {err}"),
-                            }
+                    data.core.x11conn = match x11rb::connect(Some(&format!(":{display_number}"))) {
+                        Err(err) => {
+                            tracing::warn!("Failed to connect back to XWayland: {err}");
+                            None
+                        }
+                        Ok((x11conn, screen_num)) => {
+                            use x11rb::connection::Connection;
+
+                            // The resource mask helps us determine if two `X11Surface`s belong to
+                            // the same X11 client.  We can't check the Wayland surface's Client,
+                            // because they are all the same client (it's the XWayland connection
+                            // with our compositor).  Most (all?) X11 server implementations
+                            // reserve a portion of the Window ID to uniquely identify the client
+                            // that created the window.  This is not fixed; it's a runtime setting
+                            // that the X server returns as part of connection setup.  The mask is
+                            // inverted from what we need (it identifies the resource portion of
+                            // the ID, not the client portion), so we need to invert it.  We also
+                            // don't use the full number of bits, because X11 only uses 29 bits for
+                            // resource IDs.
+                            data.core.x11_client_mask = x11conn.setup().resource_id_mask & 0x1fffffff;
+
+                            Some((x11conn, screen_num))
                         }
                     }
-
-                    XWaylandEvent::Error => {
-                        warn!("XWayland crashed on startup");
-
-                        if let Some(token) = xwayland_token.borrow_mut().take() {
-                            data.core.handle.remove(token);
-                        }
-
-                        data.xwayland_destroyed();
-                        if data.core.is_running {
-                            data.maybe_schedule_xwayland_restart(display_number);
-                        }
-                    }
+                }
+                XWaylandEvent::Error => {
+                    warn!("XWayland crashed on startup");
+                    data.core.xwm = None;
+                    data.core.xdisplay = None;
+                    data.core.x11conn = None;
                 }
             })
             .map_err(|err| anyhow!("Failed to insert the XWaylandSource into the event loop: {err}"))?;
@@ -799,6 +809,11 @@ impl<BackendData: Backend + 'static> Xfwl4Core<BackendData> {
         window.props().last_user_interaction = Some(now);
         self.last_user_interaction = now;
     }
+
+    pub(in crate::core) fn set_cursor(&mut self, cursor_name: CursorName) {
+        if let Ok(cursor) = self.cursor_theme.load_cursor(cursor_name) {
+            self.pointer_image = cursor;
+        }
 
     pub(in crate::core) fn cancel_focus_follows_mouse_timers(&mut self) {
         if let Some(token) = self.focus_timeout.take() {

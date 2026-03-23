@@ -82,8 +82,7 @@ use crate::{
         edge::ScreenEdge,
         focus::{KeyboardFocusTarget, PointerFocusTarget},
         handlers::xfwl4_compositor_ui::ActionLocation,
-        placement::FillMode,
-        shell::{GrabTrigger, ResizeEdge, SSD, TileMode, WindowElement},
+        shell::{GrabTrigger, ResizeEdge, SSD},
         state::{Xfwl4Core, Xfwl4State},
         util::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, Direction, LaptopLidState, XkbStateGdkExt},
     },
@@ -872,7 +871,7 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
 
                 true
             } else if button == BTN_MIDDLE {
-                self.lower_window(window, serial, None);
+                self.lower_window(window, serial);
                 true
             } else {
                 false
@@ -1042,7 +1041,6 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
         if let Some((focus, _)) = under
             && let Some(window) = match focus {
                 PointerFocusTarget::WlSurface(surface) => self.window_for_surface(&surface),
-                #[cfg(feature = "xwayland")]
                 PointerFocusTarget::X11Surface(surface) => self
                     .core
                     .workspace_manager

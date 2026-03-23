@@ -28,7 +28,7 @@ use smithay::{
 use crate::{
     backend::Backend,
     core::{
-        config::{ActivateAction, OutputAndRect, adjacent_monitor_in_direction},
+        config::ActivateAction,
         focus::KeyboardFocusTarget,
         shell::{
             TileMode, WindowElement, WindowFlags, WindowLayout, WindowState, WorkspaceLocation, output_and_geom_for_anchored_layout,
