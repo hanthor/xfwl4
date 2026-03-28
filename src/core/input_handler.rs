@@ -871,7 +871,7 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
 
                 true
             } else if button == BTN_MIDDLE {
-                self.lower_window(window, serial);
+                self.lower_window(window, serial, None);
                 true
             } else {
                 false

@@ -269,6 +269,10 @@ impl WindowElement {
         self.z_index().try_into().unwrap_or(WindowStackingLayer::Normal)
     }
 
+    pub(in crate::core) fn stacking_layer(&self) -> WindowStackingLayer {
+        self.z_index().try_into().unwrap_or(WindowStackingLayer::Normal)
+    }
+
     pub(in crate::core) fn active(&self) -> bool {
         self.0.user_data().get::<ActivatedState>().is_some_and(|s| s.0.get())
     }

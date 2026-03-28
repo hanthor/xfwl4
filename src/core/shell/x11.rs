@@ -168,7 +168,7 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
                 )
             });
 
-        surface.set_mapped(true).unwrap();
+        let _ = surface.set_mapped(true);
         surface
             .user_data()
             .insert_if_missing(|| X11ClientId(surface.window_id() & self.core.x11_client_mask));
@@ -244,14 +244,9 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
             self.set_window_urgent_state(&window, true);
         }
 
-        let workspace = self.core.workspace_manager.active_workspace();
-        if let Some(element_loc) = workspace.window_location(&window) {
-            let deco_offset = window
-                .decoration_state()
-                .window_decorations()
-                .map(|d| d.decorations_offset())
-                .unwrap_or_default();
-            let _ = surface.configure(Some(Rectangle::new(element_loc + deco_offset, surface.geometry().size)));
+        let workspace = self.core.workspace_manager.active_workspace_mut();
+        if let Some(bbox) = workspace.window_bbox(&window) {
+            let _ = surface.configure(Some(bbox));
         }
 
         let outputs = self.core.workspace_manager.active_workspace_mut().outputs_for_window(&window);

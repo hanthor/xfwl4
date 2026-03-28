@@ -31,7 +31,7 @@ use crate::{
     core::{
         drawing::zoom::ZoomState,
         placement::StackLocation,
-        shell::{WindowElement, WindowLayout, WindowState},
+        shell::{WindowElement, WindowState},
         state::Xfwl4State,
         util::{Direction, OutputExt, is_laptop_display_name},
     },

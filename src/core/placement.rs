@@ -23,7 +23,6 @@ use std::collections::HashMap;
 
 use smithay::{
     desktop::{WindowSurface, find_popup_root_surface, layer_map_for_output, space::SpaceElement},
-    reexports::wayland_server::Resource,
     utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Size},
     wayland::seat::WaylandFocus,
 };
@@ -119,7 +118,6 @@ impl Frame {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StackLocation {
-    Fullscreen,
     Top,
     Below(WindowElement),
 }
@@ -128,13 +126,6 @@ pub struct StackResult {
     pub location: StackLocation,
     pub allow_activate: bool,
     pub needs_attention: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FillMode {
-    Horizontal,
-    Vertical,
-    Both,
 }
 
 impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
@@ -147,7 +138,17 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                 #[cfg(feature = "xwayland")]
                 WindowSurface::X11(surface) => {
                     let input_hint = surface.hints().and_then(|hints| hints.input).unwrap_or(true);
-                    let is_modal = window.modal();
+                    let is_modal = self
+                        .core
+                        .xwayland
+                        .as_ref()
+                        .and_then(|xw| {
+                            let net_wm_state_modal = xw.x11.get_atom("_NET_WM_STATE_MODAL")?;
+                            xw.x11
+                                .get_net_wm_state(surface.window_id())
+                                .map(|state_atoms| state_atoms.contains(&net_wm_state_modal))
+                        })
+                        .unwrap_or(false);
                     input_hint || is_modal
                 }
             }
@@ -158,7 +159,7 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
         match window.0.underlying_surface() {
             WindowSurface::Wayland(_) => None,
             #[cfg(feature = "xwayland")]
-            WindowSurface::X11(surface) => self.core.xwayland.as_ref().and_then(|xw| xw.get_user_time(surface.window_id())),
+            WindowSurface::X11(surface) => self.core.xwayland.as_ref().and_then(|xw| xw.x11.get_user_time(surface.window_id())),
         }
     }
 
@@ -173,68 +174,9 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
     pub(in crate::core) fn stack_new_window(&mut self, window: &WindowElement) -> StackResult {
         let accept_focus = self.window_can_focus(window);
         let user_time = self.get_user_time(window);
-        let is_client_first_window = match window.0.underlying_surface() {
-            WindowSurface::Wayland(surface) => {
-                if let Some(client) = surface.wl_surface().client() {
-                    self.core.clients_with_windows.insert(WindowClient::Wayland(client.id()))
-                } else {
-                    true
-                }
-            }
 
-            #[cfg(feature = "xwayland")]
-            WindowSurface::X11(surface) => {
-                if let Some(xw) = self.core.xwayland.as_ref() {
-                    let window_id = surface.window_id();
-                    let client_id = window_id & xw.x11_client_mask;
-                    self.core.clients_with_windows.insert(WindowClient::X11(client_id))
-                } else {
-                    true
-                }
-            }
-        };
-
-            #[cfg(feature = "xwayland")]
-            WindowSurface::X11(surface) => {
-                if let Some(xw) = self.core.xwayland.as_ref() {
-                    let window_id = surface.window_id();
-                    let client_id = window_id & xw.client_resource_mask();
-                    self.core.clients_with_windows.insert(WindowClient::X11(client_id))
-                } else {
-                    true
-                }
-            }
-        };
-
-        #[cfg_attr(not(feature = "xwayland"), allow(unused_mut))]
-        let (mut start_minimized, mut start_fullscreen) = (false, false);
-
-        #[cfg(feature = "xwayland")]
-        if let WindowSurface::X11(surface) = window.0.underlying_surface() {
-            use crate::core::workspaces::WindowStackingLayer;
-
-            if surface.is_above() {
-                window.0.override_z_index(WindowStackingLayer::AlwaysOnTop as u8);
-            } else if surface.is_below() {
-                window.0.override_z_index(WindowStackingLayer::AlwaysOnBottom as u8);
-            }
-
-            if surface.is_fullscreen() {
-                start_fullscreen = true;
-            }
-
-            if surface.is_hidden() {
-                start_minimized = true;
-            }
-        }
-
-        #[allow(clippy::if_same_then_else)]
         let (allow_activate, prevented) = if !accept_focus {
             (false, false)
-        } else if start_minimized {
-            (false, false)
-        } else if start_fullscreen {
-            (true, false)
         } else if window.modal() {
             (true, false)
         } else if user_time == Some(0) {
@@ -251,6 +193,10 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                     .workspace_manager
                     .active_workspace()
                     .find_window(|elem| elem.wl_surface().is_some() && elem.wl_surface() == current_focus.wl_surface());
+                let current_focus_user_time = current_focus_window
+                    .as_ref()
+                    .and_then(|window| window.0.x11_surface().cloned())
+                    .and_then(|surface| self.core.xwayland.as_ref().and_then(|xw| xw.x11.get_user_time(surface.window_id())));
 
                 #[allow(clippy::if_same_then_else)]
                 if current_focus.stacking_layer() > window.stacking_layer() {
@@ -259,14 +205,11 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                     (true, false)
                 } else if self.is_moving_or_resizing() {
                     (false, true)
-                } else if match window.0.underlying_surface() {
-                    WindowSurface::Wayland(_) => !is_client_first_window,
-                    #[cfg(feature = "xwayland")]
-                    WindowSurface::X11(_) => match current_focus_user_time.zip(user_time) {
-                        Some((current_focus_user_time, user_time)) => current_focus_user_time >= user_time,
-                        None => !is_client_first_window,
-                    },
-                } {
+                } else if current_focus_user_time
+                    .zip(user_time)
+                    .filter(|(current_focus_user_time, user_time)| current_focus_user_time >= user_time)
+                    .is_none()
+                {
                     (false, true)
                 } else {
                     (self.core.config.focus_new(), false)
@@ -276,9 +219,7 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
             }
         };
 
-        let location = if start_fullscreen {
-            StackLocation::Fullscreen
-        } else if allow_activate {
+        let location = if allow_activate {
             StackLocation::Top
         } else {
             let current_focus = self.core.seat.get_keyboard().and_then(|keyboard| keyboard.current_focus());
