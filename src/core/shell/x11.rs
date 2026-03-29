@@ -87,6 +87,7 @@ use crate::{
         placement::StackResult,
         shell::{GrabTrigger, WindowState},
         state::{WindowClient, Xfwl4State},
+        util::ImageData,
     },
 };
 
@@ -268,7 +269,7 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
             self.core.toplevel_destroyed(&window);
 
             if let Some(xw) = self.core.xwayland.as_ref() {
-                let client_mask = xw.client_resource_mask();
+                let client_mask = xw.x11_client_mask;
                 let surface_client_id = surface.window_id() & client_mask;
                 let has_remaining = self.core.workspace_manager.workspaces().iter().any(|workspace| {
                     workspace.all_windows().any(
@@ -279,8 +280,6 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
                     self.core.clients_with_windows.remove(&WindowClient::X11(surface_client_id));
                 }
             }
-        } else {
-            let _ = self.core.xwayland.as_mut().and_then(|xw| xw.remove_pending_window(target_id));
         }
 
         // X11Wm will re-set window stacking on window destroy, which will be incorrect, because

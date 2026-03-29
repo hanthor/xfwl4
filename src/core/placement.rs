@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use smithay::{
     desktop::{WindowSurface, find_popup_root_surface, layer_map_for_output, space::SpaceElement},
     reexports::wayland_server::Resource,
-    utils::{FrameExtents, Logical, Point, Rectangle, SERIAL_COUNTER, Size},
+    utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Size},
     wayland::seat::WaylandFocus,
 };
 
@@ -35,7 +35,6 @@ use crate::{
         focus::KeyboardFocusTarget,
         shell::WindowElement,
         state::{WindowClient, Xfwl4State},
-        util::Direction,
         workspaces::{Workspace, WorkspaceManager},
     },
 };
@@ -187,6 +186,18 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
             WindowSurface::X11(surface) => {
                 if let Some(xw) = self.core.xwayland.as_ref() {
                     let window_id = surface.window_id();
+                    let client_id = window_id & xw.x11_client_mask;
+                    self.core.clients_with_windows.insert(WindowClient::X11(client_id))
+                } else {
+                    true
+                }
+            }
+        };
+
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(surface) => {
+                if let Some(xw) = self.core.xwayland.as_ref() {
+                    let window_id = surface.window_id();
                     let client_id = window_id & xw.client_resource_mask();
                     self.core.clients_with_windows.insert(WindowClient::X11(client_id))
                 } else {
@@ -248,25 +259,13 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                     (true, false)
                 } else if self.is_moving_or_resizing() {
                     (false, true)
-                } else if current_focus_window
-                    .as_ref()
-                    .is_some_and(|current_focus_window| window.same_application_as(current_focus_window))
-                {
-                    (true, false)
                 } else if match window.0.underlying_surface() {
                     WindowSurface::Wayland(_) => !is_client_first_window,
                     #[cfg(feature = "xwayland")]
-                    WindowSurface::X11(_) => {
-                        let current_focus_user_time = current_focus_window
-                            .as_ref()
-                            .and_then(|window| window.0.x11_surface().cloned())
-                            .and_then(|surface| self.core.xwayland.as_ref().and_then(|xw| xw.get_user_time(surface.window_id())));
-
-                        match current_focus_user_time.zip(user_time) {
-                            Some((current_focus_user_time, user_time)) => timestamp_is_before(user_time, current_focus_user_time),
-                            None => !is_client_first_window,
-                        }
-                    }
+                    WindowSurface::X11(_) => match current_focus_user_time.zip(user_time) {
+                        Some((current_focus_user_time, user_time)) => current_focus_user_time >= user_time,
+                        None => !is_client_first_window,
+                    },
                 } {
                     (false, true)
                 } else {
