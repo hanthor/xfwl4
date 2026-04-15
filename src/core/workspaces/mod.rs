@@ -32,7 +32,7 @@ use crate::{
         focus::KeyboardFocusTarget,
         shell::{
             TileMode, WindowElement, WindowFlags, WindowLayout, WindowState, WorkspaceLocation, output_and_geom_for_anchored_layout,
-            remove_all_layout_states, remove_tiled_states, ssd::DecorationInput, xdg::XdgSurfaceProps,
+            remove_all_layout_states, remove_tiled_states, xdg::XdgSurfaceProps,
         },
         state::Xfwl4State,
         util::Direction,
@@ -435,7 +435,7 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
     pub(in crate::core) fn set_window_maximized(&mut self, window: &WindowElement, anchor: Option<Point<f64, Logical>>) {
         self.set_window_untiled(window, None);
 
-        if let Some((output, output_geom)) = output_and_geom_for_anchored_layout(&self.core.workspace_manager, window, anchor) {
+        if let Some((output, output_geom)) = output_and_geom_for_anchored_layout(&self.core.workspace_manager, window) {
             let old_geom = self.core.workspace_manager.window_geometry(window);
             let mut props = window.props();
             if props.saved_geom.is_none() {
@@ -443,13 +443,8 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
             }
             drop(props);
 
-            if let Some(window_decorations) = window.decoration_state_mut().window_decorations_mut() {
-                window_decorations.update(DecorationInput::Maximized(true));
-            }
-            #[cfg(feature = "xwayland")]
-            {
-                self.x11_update_window_frame_extents(window);
-                self.x11_update_window_allowed_actions(window);
+            if let Some(window_decorations) = window.decoration_state().window_decorations_mut() {
+                window_decorations.update_maximized_state(true);
             }
 
             self.apply_anchored_layout(window, WindowLayout::Maximized, &output, output_geom);
@@ -569,7 +564,7 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
         if window.can_tile() {
             self.set_window_unmaximized(window, None);
 
-            if let Some((output, output_geom)) = output_and_geom_for_anchored_layout(&self.core.workspace_manager, window, anchor) {
+            if let Some((output, output_geom)) = output_and_geom_for_anchored_layout(&self.core.workspace_manager, window) {
                 let old_geom = self.core.workspace_manager.window_geometry(window);
                 let mut props = window.props();
                 props.tile_mode = Some(mode);
@@ -589,43 +584,6 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                         props.saved_geom = None;
                     }
                 }
-
-                #[cfg(feature = "xwayland")]
-                self.x11_update_window_allowed_actions(window);
-            }
-        }
-    }
-
-    pub(in crate::core) fn reapply_anchored_layouts_on_output(&mut self, output: &Output) {
-        let affected: Vec<WindowElement> = self
-            .core
-            .workspace_manager
-            .workspaces()
-            .iter()
-            .enumerate()
-            .flat_map(|(workspace_num, workspace)| {
-                workspace
-                    .visible_windows()
-                    .filter(move |window| {
-                        (!window.sticky() || workspace_num == 0)
-                            && window.current_layout() != WindowLayout::Normal
-                            && window.props().anchored_output.as_ref().and_then(|w| w.upgrade()).as_ref() == Some(output)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-
-        if let Some(output_geom) = self.core.workspace_manager.output_geometry(output) {
-            let mut untile_windows = Vec::new();
-            for window in &affected {
-                let layout = window.current_layout();
-                if self.apply_anchored_layout(window, layout, output, output_geom).is_none() {
-                    untile_windows.push(window.clone());
-                }
-            }
-            for window in untile_windows {
-                self.set_window_untiled(&window, None);
             }
         }
     }
@@ -641,14 +599,11 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
         let zone = Rectangle::new(output_geom.loc + zone.loc, zone.size);
 
         if let Some(mut geometry) = layout.geometry_in_zone(zone) {
-            if let Some(window_decorations) = window.decoration_state_mut().window_decorations_mut() {
+            if let Some(window_decorations) = window.decoration_state().window_decorations_mut() {
                 window_decorations.refresh_layout();
-                let e = window_decorations.decorations_extents();
-                geometry.size.w -= e.left + e.right;
-                geometry.size.h -= e.top + e.bottom;
+                geometry.size.w -= window_decorations.left_decoration_width() + window_decorations.right_decoration_width();
+                geometry.size.h -= window_decorations.top_decoration_height() + window_decorations.bottom_decoration_height();
             }
-            #[cfg(feature = "xwayland")]
-            self.x11_update_window_frame_extents(window);
 
             let fits_hints = if matches!(layout, WindowLayout::Tiled(_)) {
                 let (min, max) = window.min_max_sizes();
@@ -683,7 +638,7 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                     #[cfg(feature = "xwayland")]
                     WindowSurface::X11(surface) => {
                         let _ = surface.set_maximized(matches!(layout, WindowLayout::Maximized));
-                        let _ = surface.configure(window.grow_rect_by_gtk_frame_extents(geometry));
+                        let _ = surface.configure(geometry);
                     }
                 }
 
@@ -1220,38 +1175,5 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
 
         #[cfg(feature = "xwayland")]
         self.x11_update_window_stacking_order();
-    }
-}
-
-fn is_show_desktop_eligible(window: &WindowElement) -> bool {
-    if window.props().flags.contains(WindowFlags::NO_CYCLE) {
-        return false;
-    }
-    match window.0.underlying_surface() {
-        WindowSurface::Wayland(_) => true,
-        #[cfg(feature = "xwayland")]
-        WindowSurface::X11(surface) => {
-            use smithay::xwayland::xwm::WmWindowType;
-
-            !surface.is_override_redirect()
-                && !surface.is_skip_taskbar()
-                && surface.window_type().is_none_or(|wmtype| {
-                    !matches!(
-                        wmtype,
-                        WmWindowType::Combo
-                            | WmWindowType::Desktop
-                            | WmWindowType::Dnd
-                            | WmWindowType::Dock
-                            | WmWindowType::DropdownMenu
-                            | WmWindowType::Menu
-                            | WmWindowType::Notification
-                            | WmWindowType::PopupMenu
-                            | WmWindowType::Splash
-                            | WmWindowType::Toolbar
-                            | WmWindowType::Tooltip
-                            | WmWindowType::Utility
-                    )
-                })
-        }
     }
 }

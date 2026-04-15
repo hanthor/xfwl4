@@ -83,7 +83,7 @@ use crate::{
         focus::KeyboardFocusTarget,
         handlers::xfwl4_compositor_ui::ActionLocation,
         placement::StackResult,
-        shell::{GrabTrigger, WindowFlags, WindowState, ssd::DecorationInput},
+        shell::{GrabTrigger, WindowFlags, WindowIcon, WindowState, XdgToplevelIconState},
         state::Xfwl4State,
         util::{prettify_name, shm_buffer_to_image_data},
     },

@@ -18,7 +18,7 @@
 use smithay::{
     output::Output,
     reexports::wayland_protocols::xdg::shell::server::xdg_toplevel,
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Rectangle},
     wayland::shell::xdg::ToplevelState,
 };
 
@@ -26,9 +26,6 @@ use crate::{
     backend::Backend,
     core::{shell::WindowElement, workspaces::WorkspaceManager},
 };
-
-const TILE_ZONE_EDGE_DIST: i32 = 10;
-const TILE_ZONE_CORNER_DIVISOR: i32 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TileMode {
@@ -40,12 +37,6 @@ pub enum TileMode {
     UpRight,
     DownLeft,
     DownRight,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TileZone {
-    Maximize,
-    Tile(TileMode),
 }
 
 impl TileMode {
@@ -74,47 +65,6 @@ impl TileMode {
                 (zone.loc.x + zone.size.w / 2, zone.loc.y + zone.size.h / 2).into(),
                 (zone.size.w - zone.size.w / 2, zone.size.h - zone.size.h / 2).into(),
             ),
-        }
-    }
-
-    pub fn pointer_zones_in_output(&self, output_geom: Rectangle<i32, Logical>) -> Vec<Rectangle<i32, Logical>> {
-        let dist = TILE_ZONE_EDGE_DIST;
-        let dist_corner = output_geom.size.w.min(output_geom.size.h) / TILE_ZONE_CORNER_DIVISOR;
-        let loc = output_geom.loc;
-        let size = output_geom.size;
-
-        match self {
-            TileMode::Up | TileMode::Down => Vec::new(),
-            TileMode::Left => vec![Rectangle::new(
-                (loc.x, loc.y + dist_corner).into(),
-                (dist, size.h - 2 * dist_corner).into(),
-            )],
-            TileMode::Right => vec![Rectangle::new(
-                (loc.x + size.w - dist, loc.y + dist_corner).into(),
-                (dist, size.h - 2 * dist_corner).into(),
-            )],
-            TileMode::UpLeft => vec![
-                Rectangle::new(loc, (dist_corner, dist).into()),
-                Rectangle::new(loc, (dist, dist_corner).into()),
-            ],
-            TileMode::UpRight => vec![
-                Rectangle::new((loc.x + size.w - dist_corner, loc.y).into(), (dist_corner, dist).into()),
-                Rectangle::new((loc.x + size.w - dist, loc.y).into(), (dist, dist_corner).into()),
-            ],
-            TileMode::DownLeft => vec![
-                Rectangle::new((loc.x, loc.y + size.h - dist).into(), (dist_corner, dist).into()),
-                Rectangle::new((loc.x, loc.y + size.h - dist_corner).into(), (dist, dist_corner).into()),
-            ],
-            TileMode::DownRight => vec![
-                Rectangle::new(
-                    (loc.x + size.w - dist_corner, loc.y + size.h - dist).into(),
-                    (dist_corner, dist).into(),
-                ),
-                Rectangle::new(
-                    (loc.x + size.w - dist, loc.y + size.h - dist_corner).into(),
-                    (dist, dist_corner).into(),
-                ),
-            ],
         }
     }
 
@@ -225,49 +175,15 @@ pub fn remove_all_layout_states(state: &mut ToplevelState) {
     state.states.unset(xdg_toplevel::State::Maximized);
 }
 
-impl TileZone {
-    pub fn pointer_zones_in_output(&self, output_geom: Rectangle<i32, Logical>) -> Vec<Rectangle<i32, Logical>> {
-        match self {
-            TileZone::Maximize => {
-                let dist_corner = output_geom.size.w.min(output_geom.size.h) / TILE_ZONE_CORNER_DIVISOR;
-                vec![Rectangle::new(
-                    (output_geom.loc.x + dist_corner, output_geom.loc.y).into(),
-                    (output_geom.size.w - 2 * dist_corner, TILE_ZONE_EDGE_DIST).into(),
-                )]
-            }
-            TileZone::Tile(mode) => mode.pointer_zones_in_output(output_geom),
-        }
-    }
-}
-
-pub fn tile_zone_for_pointer(pointer: Point<f64, Logical>, output_geom: Rectangle<i32, Logical>) -> Option<TileZone> {
-    let candidates = [
-        TileZone::Tile(TileMode::UpLeft),
-        TileZone::Tile(TileMode::UpRight),
-        TileZone::Tile(TileMode::DownLeft),
-        TileZone::Tile(TileMode::DownRight),
-        TileZone::Maximize,
-        TileZone::Tile(TileMode::Left),
-        TileZone::Tile(TileMode::Right),
-    ];
-    candidates
-        .iter()
-        .find(|zone| {
-            zone.pointer_zones_in_output(output_geom)
-                .iter()
-                .any(|rect| rect.to_f64().contains(pointer))
-        })
-        .copied()
-}
-
 pub fn output_and_geom_for_anchored_layout<BackendData: Backend + 'static>(
     workspace_manager: &WorkspaceManager<BackendData>,
     window: &WindowElement,
-    anchor: Option<Point<f64, Logical>>,
 ) -> Option<(Output, Rectangle<i32, Logical>)> {
-    anchor
-        .and_then(|p| workspace_manager.output_under(p).next().cloned())
-        .or_else(|| window.props().anchored_output.as_ref().and_then(|weak| weak.upgrade()))
+    window
+        .props()
+        .anchored_output
+        .as_ref()
+        .and_then(|weak| weak.upgrade())
         .or_else(|| workspace_manager.outputs_for_window(window).first().cloned())
         .or_else(|| workspace_manager.outputs().next().cloned())
         .and_then(|output| workspace_manager.output_geometry(&output).map(|geom| (output, geom)))
