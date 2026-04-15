@@ -432,84 +432,6 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
         }
     }
 
-    pub(in crate::core) fn toggle_show_desktop(&mut self) {
-        if self.core.showing_desktop {
-            self.deactivate_show_desktop();
-        } else {
-            self.activate_show_desktop();
-        }
-    }
-
-    pub(in crate::core) fn activate_show_desktop(&mut self) {
-        if !self.core.showing_desktop {
-            let windows: Vec<WindowElement> = self
-                .core
-                .workspace_manager
-                .workspaces()
-                .iter()
-                .flat_map(|ws| ws.visible_windows().cloned())
-                .filter(is_show_desktop_eligible)
-                .collect();
-
-            for window in &windows {
-                window.props().was_shown_before_show_desktop = true;
-                self.set_window_minimized(window);
-            }
-
-            self.core.showing_desktop = true;
-            #[cfg(feature = "xwayland")]
-            self.x11_set_showing_desktop(true);
-        }
-    }
-
-    pub(in crate::core) fn deactivate_show_desktop(&mut self) {
-        if self.core.showing_desktop {
-            let to_restore: Vec<WindowElement> = self
-                .core
-                .workspace_manager
-                .workspaces()
-                .iter()
-                .flat_map(|ws| ws.minimized_windows().cloned())
-                .filter(|w| w.props().was_shown_before_show_desktop)
-                .collect();
-
-            self.core.showing_desktop = false;
-            for w in &to_restore {
-                w.props().was_shown_before_show_desktop = false;
-            }
-            #[cfg(feature = "xwayland")]
-            self.x11_set_showing_desktop(false);
-
-            let serial = SERIAL_COUNTER.next_serial();
-            for window in &to_restore {
-                self.set_window_unminimized(window, serial, false);
-            }
-
-            let focus_target = to_restore
-                .iter()
-                // Prefer focusing a fullscreen window from the restore set.
-                .find(|w| w.fullscreened())
-                .or_else(|| to_restore.last())
-                .cloned();
-            if let Some(target) = focus_target {
-                self.activate_window(&target, true, true, None);
-            }
-        }
-    }
-
-    fn maybe_clear_show_desktop_for(&mut self, window: &WindowElement) {
-        if self.core.showing_desktop && window.props().was_shown_before_show_desktop {
-            self.core.showing_desktop = false;
-            for ws in self.core.workspace_manager.workspaces() {
-                for w in ws.visible_windows().chain(ws.minimized_windows()) {
-                    w.props().was_shown_before_show_desktop = false;
-                }
-            }
-            #[cfg(feature = "xwayland")]
-            self.x11_set_showing_desktop(false);
-        }
-    }
-
     pub(in crate::core) fn set_window_maximized(&mut self, window: &WindowElement, anchor: Option<Point<f64, Logical>>) {
         self.set_window_untiled(window, None);
 
@@ -600,6 +522,46 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                 Vec::new(),
                 None,
             );
+        }
+    }
+
+    pub(in crate::core) fn set_window_filled(&mut self, window: &WindowElement) {
+        if window.maximized() {
+            self.set_window_unmaximized(window, None);
+        }
+
+        let outputs_for_window = self.core.workspace_manager.outputs_for_window(window);
+        if let Some(output) = outputs_for_window.first().or_else(|| {
+            // The window hasn't been mapped yet, use the primary output instead
+            self.core.workspace_manager.outputs().next()
+        }) {
+            let layer_map = layer_map_for_output(output);
+            let mut geometry = layer_map.non_exclusive_zone();
+            drop(layer_map);
+
+            if let Some(window_decorations) = window.decoration_state().window_decorations_mut() {
+                geometry.size.w -= window_decorations.left_decoration_width() + window_decorations.right_decoration_width();
+                geometry.size.h -= window_decorations.top_decoration_height() + window_decorations.bottom_decoration_height();
+            }
+
+            match window.0.underlying_surface() {
+                WindowSurface::Wayland(surface) => {
+                    surface.with_pending_state(|state| {
+                        state.size = Some(geometry.size);
+                    });
+                    self.core.workspace_manager.relocate_window(window, geometry.loc, false);
+
+                    if surface.is_initial_configure_sent() {
+                        surface.send_configure();
+                    }
+                }
+
+                #[cfg(feature = "xwayland")]
+                WindowSurface::X11(surface) => {
+                    let _ = surface.configure(geometry);
+                    self.core.workspace_manager.relocate_window(window, geometry.loc, false);
+                }
+            }
         }
     }
 
