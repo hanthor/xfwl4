@@ -48,6 +48,7 @@ impl fmt::Display for ChosenBackend {
             Self::Auto => f.write_str("auto"),
             #[cfg(feature = "udev")]
             Self::Tty => f.write_str("tty"),
+            #[cfg(feature = "winit")]
             Self::Winit => f.write_str("winit"),
             #[cfg(feature = "x11")]
             Self::X11 => f.write_str("x11"),
@@ -126,9 +127,12 @@ pub fn parse() -> anyhow::Result<Cli> {
 
     cli.backend = if let ChosenBackend::Auto = cli.backend {
         if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("WAYLAND_SOCKET").is_ok() {
-            if cfg!(feature = "winit") {
+            #[cfg(feature = "winit")]
+            {
                 Ok(ChosenBackend::Winit)
-            } else {
+            }
+            #[cfg(not(feature = "winit"))]
+            {
                 Err(anyhow!(
                     "A Wayland session is already running, but the Winit backend is not enabled"
                 ))
@@ -140,9 +144,12 @@ pub fn parse() -> anyhow::Result<Cli> {
             }
             #[cfg(not(feature = "x11"))]
             {
-                if cfg!(feature = "winit") {
+                #[cfg(feature = "winit")]
+                {
                     Ok(ChosenBackend::Winit)
-                } else {
+                }
+                #[cfg(not(feature = "winit"))]
+                {
                     Err(anyhow!(
                         "An X11 session is already running, but neither the Winit nor X11 backends are enabled"
                     ))
