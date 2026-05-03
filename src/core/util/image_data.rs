@@ -116,7 +116,10 @@ pub(super) fn scale_aspect(pixbuf: gdk_pixbuf::Pixbuf, width: u32, height: u32) 
 impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
     pub(in crate::core) fn dmabuf_to_image_data(&mut self, buffer: &Buffer) -> anyhow::Result<ImageData> {
         let dmabuf = get_dmabuf(buffer)?;
+        #[cfg(feature = "udev")]
         let mut renderer = self.backend.renderer(dmabuf.node())?;
+        #[cfg(not(feature = "udev"))]
+        let mut renderer = self.backend.renderer()?;
         let texture = renderer.import_dmabuf(dmabuf, None)?;
 
         let width = texture.width();
@@ -172,7 +175,10 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
             (thumbnail_logical_w as f64 / logical_size.w as f64).min(thumbnail_logical_h as f64 / logical_size.h as f64);
         let render_scale = Scale::from(thumbnail_scale_factor * output_scale.x);
 
+        #[cfg(feature = "udev")]
         let mut renderer = self.backend.renderer(None)?;
+        #[cfg(not(feature = "udev"))]
+        let mut renderer = self.backend.renderer()?;
 
         let elements = AsRenderElements::render_elements::<<Window as AsRenderElements<BackendData::Renderer<'_>>>::RenderElement>(
             window,

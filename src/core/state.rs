@@ -717,7 +717,10 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
 
     pub fn load_decoration_theme(&mut self) -> anyhow::Result<DecorationTheme> {
         let theme_path = self.core.config.theme_path().ok_or_else(|| anyhow!("Unable to find theme path"))?;
+        #[cfg(feature = "udev")]
         let renderer = self.backend.renderer(None)?;
+        #[cfg(not(feature = "udev"))]
+        let renderer = self.backend.renderer()?;
         let decoration_theme = DecorationTheme::load(renderer, theme_path, &self.core.config.resolved_theme_colors())?;
         self.core.decoration_theme = Some(decoration_theme.clone());
 

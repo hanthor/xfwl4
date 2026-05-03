@@ -19,6 +19,7 @@ mod keyboard_config;
 mod keyboard_shortcuts;
 mod keyboard_shortcuts_config;
 mod output_config;
+#[cfg(feature = "udev")]
 mod pointer_config;
 mod ui_settings;
 mod xfwl4_config;
@@ -32,6 +33,7 @@ pub use keyboard_shortcuts_config::KeyboardShorctutsConfig;
 pub use output_config::{
     OutputAndRect, OutputConfig, OutputConfigChange, OutputsConfig, adjacent_monitor_in_direction, scale_from_fractional,
 };
+#[cfg(feature = "udev")]
 pub use pointer_config::PointerConfig;
 pub use ui_settings::UiSettings;
 pub use xfwl4_config::Xfwl4Config;

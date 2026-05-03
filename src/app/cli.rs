@@ -21,7 +21,10 @@ use std::path::PathBuf;
 
 use anyhow::anyhow;
 use clap::Parser;
-use xfwl4::backend::{udev::UdevConfig, x11::X11Config};
+#[cfg(feature = "udev")]
+use xfwl4::backend::udev::UdevConfig;
+#[cfg(feature = "x11")]
+use xfwl4::backend::x11::X11Config;
 
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
 pub enum ChosenBackend {
@@ -43,8 +46,10 @@ impl fmt::Display for ChosenBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Auto => f.write_str("auto"),
+            #[cfg(feature = "udev")]
             Self::Tty => f.write_str("tty"),
             Self::Winit => f.write_str("winit"),
+            #[cfg(feature = "x11")]
             Self::X11 => f.write_str("x11"),
         }
     }
@@ -95,6 +100,7 @@ pub struct Cli {
     pub xwayland_scale: f64,
 }
 
+#[cfg(feature = "x11")]
 impl From<Cli> for X11Config {
     fn from(value: Cli) -> Self {
         Self {
@@ -103,6 +109,7 @@ impl From<Cli> for X11Config {
     }
 }
 
+#[cfg(feature = "udev")]
 impl From<Cli> for UdevConfig {
     fn from(value: Cli) -> Self {
         Self {
@@ -127,19 +134,29 @@ pub fn parse() -> anyhow::Result<Cli> {
                 ))
             }
         } else if std::env::var("DISPLAY").is_ok() {
-            if cfg!(feature = "x11") {
+            #[cfg(feature = "x11")]
+            {
                 Ok(ChosenBackend::X11)
-            } else if cfg!(feature = "winit") {
-                Ok(ChosenBackend::Winit)
-            } else {
-                Err(anyhow!(
-                    "An X11 session is already running, but neither the Winit nor X11 backends are enabled"
-                ))
             }
-        } else if cfg!(feature = "udev") {
-            Ok(ChosenBackend::Tty)
+            #[cfg(not(feature = "x11"))]
+            {
+                if cfg!(feature = "winit") {
+                    Ok(ChosenBackend::Winit)
+                } else {
+                    Err(anyhow!(
+                        "An X11 session is already running, but neither the Winit nor X11 backends are enabled"
+                    ))
+                }
+            }
         } else {
-            Err(anyhow!("No suitable backend is availble"))
+            #[cfg(feature = "udev")]
+            {
+                Ok(ChosenBackend::Tty)
+            }
+            #[cfg(not(feature = "udev"))]
+            {
+                Err(anyhow!("No suitable backend is availble"))
+            }
         }
     } else {
         Ok(cli.backend)

@@ -94,7 +94,7 @@ udev = [
   "smithay/renderer_multi",
   "xcursor",
 ]
-winit = ["smithay/backend_winit", "smithay/backend_drm"]
+winit = ["smithay/backend_winit", "smithay/backend_drm", "image"]
 x11 = ["smithay/backend_x11", "x11rb", "smithay/renderer_gl", "smithay/backend_vulkan"]
 xwayland = ["smithay/xwayland", "x11rb", "smithay/x11rb_event_source", "xcursor"]
 profile-with-puffin = ["profiling/profile-with-puffin", "puffin_http"]

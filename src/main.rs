@@ -102,7 +102,10 @@ fn run() -> anyhow::Result<()> {
 
     xfconf::init().context("xfconf initialization failed")?;
 
+    #[cfg(feature = "udev")]
     let start_session = !cli.no_session;
+    #[cfg(not(feature = "udev"))]
+    let start_session = false;
     #[cfg(feature = "xwayland")]
     let xwayland_scale = cli.xwayland_scale;
 

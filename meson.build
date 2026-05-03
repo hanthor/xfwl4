@@ -111,6 +111,8 @@ env = {
   'DATADIR': get_option('prefix') / get_option('datadir'),
   'PKGDATADIR': get_option('prefix') / get_option('datadir') / 'xfce4' / 'xfwl4',
   'LOCALEDIR': get_option('prefix') / get_option('datadir') / 'locale',
+  'PKG_CONFIG_PATH': get_option('prefix') / 'lib64/pkgconfig:' + get_option('prefix') / 'share/pkgconfig' + ':/usr/lib64/pkgconfig:/usr/share/pkgconfig',
+  'LD_LIBRARY_PATH': get_option('prefix') / 'lib64',
 }
 
 xfwl4 = custom_target(
