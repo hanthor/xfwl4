@@ -646,8 +646,7 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
                 // Try the corresponding card-type node (e.g. card0) as a fallback.
                 primary_gpu
                     .node_with_type(NodeType::Primary)
-                    .ok()
-                    .flatten()
+                    .and_then(Result::ok)
                     .and_then(|card_node| state.backend.gpus.single_renderer(&card_node).ok())
                     .ok_or_else(|| anyhow::anyhow!("no renderer available for either render or card node"))
             })

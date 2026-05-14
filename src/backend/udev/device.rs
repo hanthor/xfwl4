@@ -204,7 +204,7 @@ impl Xfwl4State<UdevData> {
             }
 
             let render_node = egl_device.try_get_render_node().ok().flatten()
-                .or_else(|| node.node_with_type(NodeType::Render).ok().flatten())
+                .or_else(|| node.node_with_type(NodeType::Render).and_then(Result::ok))
                 .unwrap_or(node);
             self.backend
                 .gpus
