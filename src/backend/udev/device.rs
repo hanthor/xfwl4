@@ -396,6 +396,8 @@ impl Xfwl4State<UdevData> {
                     render_durations: VecDeque::new(),
                     repaint_timeout: None,
                     destroy_timeout: None,
+                    waiting_for_vblank: false,
+                    redraw_needed: false,
                 };
 
                 device.surfaces.insert(crtc, surface);
@@ -527,8 +529,32 @@ impl Xfwl4State<UdevData> {
                 leasing_global.disable_global::<Xfwl4State<UdevData>>();
             }
 
+            // Only remove the render node from GpuManager when no other backend still uses it.
+            // Multiple DRM nodes (e.g. a display-only node + a render node) can share one render node.
             if let Some(render_node) = backend_data.render_node {
-                self.backend.gpus.as_mut().remove_node(&render_node);
+                let still_used = self.backend.backends.values().any(|b| b.render_node == Some(render_node));
+                if !still_used {
+                    self.backend.gpus.as_mut().remove_node(&render_node);
+                }
+
+                // Clear dmabuf feedback on surfaces of remaining backends that routed
+                // through this render node — their feedback is now stale.
+                for remaining in self.backend.backends.values_mut() {
+                    for surface in remaining.surfaces.values_mut() {
+                        if surface.render_node == Some(render_node) {
+                            surface.dmabuf_feedback = None;
+                        }
+                    }
+                }
+            }
+
+            // If this was the primary GPU, tear down the dmabuf and syncobj globals.
+            // Clients will receive buffer destruction events automatically.
+            let is_primary = node == self.backend.primary_gpu
+                || backend_data.render_node == Some(self.backend.primary_gpu);
+            if is_primary {
+                self.backend.dmabuf_state.take();
+                self.backend.syncobj_state.take();
             }
 
             handle.remove(backend_data.registration_token);

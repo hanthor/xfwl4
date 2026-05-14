@@ -147,6 +147,12 @@ pub(super) struct SurfaceData {
     pub render_durations: VecDeque<Duration>,
     pub repaint_timeout: Option<RegistrationToken>,
     pub destroy_timeout: Option<RegistrationToken>,
+    /// A frame has been submitted and we are waiting for the DRM vblank event.
+    /// No new frame should be queued until `frame_finish` clears this.
+    pub waiting_for_vblank: bool,
+    /// A redraw was requested while `waiting_for_vblank` was true.
+    /// `frame_finish` will schedule an immediate repaint when it sees this set.
+    pub redraw_needed: bool,
 }
 
 impl Xfwl4State<UdevData> {
@@ -236,6 +242,8 @@ impl Xfwl4State<UdevData> {
             return;
         }
         surface.last_presentation_time = Some(clock);
+        surface.waiting_for_vblank = false;
+        let redraw_needed = std::mem::replace(&mut surface.redraw_needed, false);
 
         let submit_result = drm_output.frame_submitted().map_err(Into::<SwapBuffersError>::into);
 
@@ -269,6 +277,11 @@ impl Xfwl4State<UdevData> {
         };
 
         if schedule_render {
+            // Cancel any existing repaint timer before scheduling a new one.
+            if let Some(old_token) = surface.repaint_timeout.take() {
+                self.core.unregister_timer(old_token);
+            }
+
             // What are we trying to solve by introducing a delay here:
             //
             // Basically it is all about latency of client provided buffers.
@@ -296,7 +309,11 @@ impl Xfwl4State<UdevData> {
 
             let next_frame_target = clock + frame_duration;
 
-            let timer = if surface.render_durations.len() < RENDER_DURATIONS_SLIDING_WINDOW_MIN
+            let timer = if redraw_needed {
+                // A redraw was requested while a frame was in flight — render immediately.
+                trace!("redraw needed after vblank, scheduling immediate repaint on {:?}", crtc);
+                Timer::immediate()
+            } else if surface.render_durations.len() < RENDER_DURATIONS_SLIDING_WINDOW_MIN
                 && surface
                     .render_node
                     .map(|render_node| render_node != self.backend.primary_gpu)
@@ -415,6 +432,9 @@ impl UdevData {
         let (reschedule, dmabuf_feedback, states) = match result {
             Ok((has_rendered, states, sync)) => {
                 if has_rendered {
+                    // Frame was submitted; wait for vblank before rendering again.
+                    surface.waiting_for_vblank = true;
+                    surface.redraw_needed = false;
                     let tx = self.gpu_render_duration_tx.clone();
                     std::thread::spawn(move || {
                         if let Some(sync) = sync {
@@ -471,6 +491,10 @@ impl UdevData {
             let next_frame_target = frame_target + Duration::from_millis(1_000_000 / output_refresh as u64);
             let reschedule_timeout = Duration::from(next_frame_target).saturating_sub(core.now().into());
             trace!("reschedule repaint timer with delay {:?} on {:?}", reschedule_timeout, crtc,);
+            // Cancel any existing repaint timer before scheduling a new one to prevent stacking.
+            if let Some(old_token) = surface.repaint_timeout.take() {
+                core.unregister_timer(old_token);
+            }
             let timer = Timer::from_duration(reschedule_timeout);
             let output = output.clone();
             let token = core.register_timer(timer, move |state| {
@@ -493,6 +517,21 @@ pub(super) fn udev_do_render(
     crtc: crtc::Handle,
     frame_target: Time<Monotonic>,
 ) {
+    // If a frame is already in flight, defer until frame_finish() clears the vblank wait.
+    if let Some(surface) = state
+        .backend
+        .backends
+        .get_mut(&node)
+        .and_then(|b| b.surfaces.get_mut(&crtc))
+    {
+        if surface.waiting_for_vblank {
+            surface.redraw_needed = true;
+            return;
+        }
+        // The timer fired — clear its token so frame_finish won't try to cancel a stale one.
+        surface.repaint_timeout = None;
+    }
+
     state.render(output, frame_target, |backend, core| {
         backend.render(core, output, node, crtc, frame_target)
     });

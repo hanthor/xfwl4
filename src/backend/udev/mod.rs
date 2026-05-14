@@ -75,7 +75,7 @@ use smithay::{
     output::{Mode, Output},
     reexports::{
         calloop::{
-            EventLoop, LoopHandle, channel,
+            Dispatcher, EventLoop, LoopHandle, channel,
             timer::{TimeoutAction, Timer},
         },
         input::Libinput,
@@ -311,9 +311,44 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
     let mut state = Xfwl4State::init(display, event_loop.handle(), event_loop.get_signal(), data, true);
 
     /*
-     * Initialize the udev backend
+     * Initialize the udev backend.
+     *
+     * We wrap it in a Dispatcher so we can access device_list() from the
+     * ActivateSession handler (needed for the first-boot path when the session
+     * was not yet active at init time).
      */
     let udev_backend = UdevBackend::new(&seat_name).context("Failed to intialize udev backend")?;
+    let handle_for_udev = handle.clone();
+    let udev_dispatcher = Dispatcher::new(udev_backend, move |event, _, state: &mut Xfwl4State<UdevData>| match event {
+        UdevEvent::Added { device_id, path } => {
+            if !state.backend.session.is_active() {
+                return;
+            }
+            if let Err(err) = DrmNode::from_dev_id(device_id)
+                .map_err(DeviceAddError::DrmNode)
+                .and_then(|node| state.device_added(handle_for_udev.clone(), node, &path))
+            {
+                error!("Skipping device {device_id}: {err}");
+            }
+        }
+        UdevEvent::Changed { device_id } => {
+            if !state.backend.session.is_active() {
+                return;
+            }
+            if let Ok(node) = DrmNode::from_dev_id(device_id) {
+                state.device_changed(node)
+            }
+        }
+        UdevEvent::Removed { device_id } => {
+            if !state.backend.session.is_active() {
+                return;
+            }
+            if let Ok(node) = DrmNode::from_dev_id(device_id) {
+                state.device_removed(handle_for_udev.clone(), node)
+            }
+        }
+    });
+    let udev_dispatcher_for_activate = udev_dispatcher.clone();
 
     /*
      * Initialize libinput backend
@@ -322,6 +357,13 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
     libinput_context
         .udev_assign_seat(&seat_name)
         .map_err(|_| anyhow!("Failed to assign libinput context to seat"))?;
+
+    // If the session is not yet active (e.g. we are not the foreground VT),
+    // suspend libinput until ActivateSession fires.
+    if !state.backend.session.is_active() {
+        libinput_context.suspend();
+    }
+
     let libinput_backend = LibinputInputBackend::new(libinput_context.clone());
 
     /*
@@ -339,6 +381,8 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
         })
         .map_err(|err| anyhow!("Failed to register libinput event source: {err}"))?;
 
+    let display_handle_for_activate = display_handle.clone();
+    let handle_for_activate = handle.clone();
     event_loop
         .handle()
         .insert_source(notifier, move |event, &mut (), state| match event {
@@ -360,13 +404,175 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
                 if let Err(err) = libinput_context.resume() {
                     error!("Failed to resume libinput context: {:?}", err);
                 }
+
+                // First-boot path: if no backends are registered yet, the session was
+                // inactive when init() ran and we deferred device enumeration to here.
+                if state.backend.backends.is_empty() {
+                    info!("First ActivateSession: enumerating GPU devices");
+
+                    let primary_node = primary_gpu
+                        .node_with_type(NodeType::Primary)
+                        .and_then(|n| n.ok());
+                    let devices: Vec<_> = udev_dispatcher_for_activate
+                        .as_source_ref()
+                        .device_list()
+                        .map(|(id, p)| (id, p.to_owned()))
+                        .collect();
+
+                    let primary_device = devices.iter().find(|(device_id, _)| {
+                        primary_node
+                            .map(|n| *device_id == n.dev_id())
+                            .unwrap_or(false)
+                            || *device_id == primary_gpu.dev_id()
+                    });
+
+                    if let Some((device_id, path)) = primary_device {
+                        match DrmNode::from_dev_id(*device_id) {
+                            Err(err) => {
+                                error!("Failed to get primary GPU node: {err}");
+                                return;
+                            }
+                            Ok(node) => {
+                                if let Err(err) = state.device_added(handle_for_activate.clone(), node, path) {
+                                    error!("Failed to initialize primary GPU: {err}");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+
+                    let primary_device_id = primary_device.map(|(id, _)| *id);
+                    for (device_id, path) in &devices {
+                        if Some(*device_id) == primary_device_id {
+                            continue;
+                        }
+                        if let Err(err) = DrmNode::from_dev_id(*device_id)
+                            .map_err(DeviceAddError::DrmNode)
+                            .and_then(|node| state.device_added(handle_for_activate.clone(), node, path))
+                        {
+                            error!("Skipping device {device_id}: {err}");
+                        }
+                    }
+
+                    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
+                    let mut renderer = match state.backend.gpus.single_renderer(&primary_gpu) {
+                        Err(err) => {
+                            error!("Failed to get renderer for primary GPU on ActivateSession: {err}");
+                            return;
+                        }
+                        Ok(r) => r,
+                    };
+                    state.core.update_shm_formats(renderer.shm_formats());
+
+                    #[cfg(feature = "egl")]
+                    {
+                        info!(?primary_gpu, "Trying to initialize EGL Hardware Acceleration");
+                        match renderer.bind_wl_display(&display_handle_for_activate) {
+                            Ok(_) => info!("EGL hardware-acceleration enabled"),
+                            Err(egl::Error::EglExtensionNotSupported(exts))
+                                if exts.iter().all(|e| *e == "EGL_WL_bind_wayland_display") =>
+                            {
+                                info!("EGL hardware-acceleration not supported (safe to ignore)");
+                            }
+                            Err(err) => warn!(?err, "Failed to initialize EGL hardware-acceleration"),
+                        }
+                    }
+
+                    let dmabuf_formats = renderer.dmabuf_formats();
+                    match DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats).build() {
+                        Err(err) => {
+                            error!("Failed to build DMABUF feedback: {err}");
+                            return;
+                        }
+                        Ok(default_feedback) => {
+                            let mut dmabuf_state = DmabufState::new();
+                            let global = dmabuf_state
+                                .create_global_with_default_feedback::<Xfwl4State<UdevData>>(
+                                    &display_handle_for_activate,
+                                    &default_feedback,
+                                );
+                            state.backend.dmabuf_state = Some((dmabuf_state, global));
+                        }
+                    }
+
+                    let gpus = &mut state.backend.gpus;
+                    state.backend.backends.iter_mut().for_each(|(node, backend_data)| {
+                        backend_data.surfaces.values_mut().for_each(|surface_data| {
+                            if let Some(drm_output) = surface_data.drm_output.as_ref() {
+                                surface_data.dmabuf_feedback =
+                                    surface_data.dmabuf_feedback.take().or_else(|| {
+                                        drm_output.with_compositor(|compositor| {
+                                            get_surface_dmabuf_feedback(
+                                                primary_gpu,
+                                                surface_data.render_node,
+                                                *node,
+                                                gpus,
+                                                compositor.surface(),
+                                            )
+                                        })
+                                    });
+                            }
+                        });
+                    });
+
+                    if let Some(primary_node) = state
+                        .backend
+                        .primary_gpu
+                        .node_with_type(NodeType::Primary)
+                        .and_then(|x| x.ok())
+                        && let Some(backend) = state.backend.backends.get(&primary_node)
+                    {
+                        let import_device = backend.drm_output_manager.device().device_fd().clone();
+                        if supports_syncobj_eventfd(&import_device) {
+                            let syncobj_state = DrmSyncobjState::new::<Xfwl4State<UdevData>>(
+                                &display_handle_for_activate,
+                                import_device,
+                            );
+                            state.backend.syncobj_state = Some(syncobj_state);
+                        }
+                    }
+                } else {
+                    // Regular resume: reconcile against the current device list.
+                    // Devices may have been hot-plugged or removed while we were suspended.
+                    let current_ids: std::collections::HashSet<u64> = udev_dispatcher_for_activate
+                        .as_source_ref()
+                        .device_list()
+                        .map(|(id, _)| id)
+                        .collect();
+
+                    // Remove backends whose devices disappeared while suspended.
+                    let stale: Vec<DrmNode> = state
+                        .backend
+                        .backends
+                        .keys()
+                        .filter(|node| !current_ids.contains(&node.dev_id()))
+                        .copied()
+                        .collect();
+                    for node in stale {
+                        info!("Device {node} disappeared during suspend; removing");
+                        state.device_removed(handle_for_activate.clone(), node);
+                    }
+
+                    // Add devices that appeared while we were suspended.
+                    let new_devices: Vec<_> = udev_dispatcher_for_activate
+                        .as_source_ref()
+                        .device_list()
+                        .filter(|(id, _)| {
+                            DrmNode::from_dev_id(*id)
+                                .map_or(false, |n| !state.backend.backends.contains_key(&n))
+                        })
+                        .map(|(id, p)| (id, p.to_owned()))
+                        .collect();
+                    for (device_id, path) in new_devices {
+                        if let Err(err) = DrmNode::from_dev_id(device_id)
+                            .map_err(DeviceAddError::DrmNode)
+                            .and_then(|node| state.device_added(handle_for_activate.clone(), node, &path))
+                        {
+                            error!("Failed to add new device {device_id} on resume: {err}");
+                        }
+                    }
+                }
                 for (node, backend) in state.backend.backends.iter_mut().map(|(handle, backend)| (*handle, backend)) {
-                    // if we do not care about flicking (caused by modesetting) we could just
-                    // pass true for disable connectors here. this would make sure our drm
-                    // device is in a known state (all connectors and planes disabled).
-                    // but for demonstration we choose a more optimistic path by leaving the
-                    // state as is and assume it will just work. If this assumption fails
-                    // we will try to reset the state when trying to queue a frame.
                     backend
                         .drm_output_manager
                         .lock()
@@ -392,89 +598,99 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
         .map_err(|err| anyhow!("Failed to register session notifier event source: {err}"))?;
 
     // We try to initialize the primary node before others to make sure
-    // any display only node can fall back to the primary node for rendering
-    let primary_node = primary_gpu.node_with_type(NodeType::Primary).and_then(|node| node.ok());
-    let primary_device = udev_backend.device_list().find(|(device_id, _)| {
-        primary_node
-            .map(|primary_node| *device_id == primary_node.dev_id())
-            .unwrap_or(false)
-            || *device_id == primary_gpu.dev_id()
-    });
-
-    if let Some((device_id, path)) = primary_device {
-        let node = DrmNode::from_dev_id(device_id).context("Failed to get primary GPU node")?;
-        state
-            .device_added(handle.clone(), node, path)
-            .context("Failed to initialize primary GPU node")?;
-    }
-
-    let primary_device_id = primary_device.map(|(device_id, _)| device_id);
-    for (device_id, path) in udev_backend.device_list() {
-        if Some(device_id) == primary_device_id {
-            continue;
-        }
-
-        if let Err(err) = DrmNode::from_dev_id(device_id)
-            .map_err(DeviceAddError::DrmNode)
-            .and_then(|node| state.device_added(handle.clone(), node, path))
-        {
-            error!("Skipping device {device_id}: {err}");
-        }
-    }
-
-    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let mut renderer = state
-        .backend
-        .gpus
-        .single_renderer(&primary_gpu)
-        .context("Failed to get renderer for primary GPU")?;
-
-    state.core.update_shm_formats(renderer.shm_formats());
-
-    #[cfg(feature = "egl")]
-    {
-        info!(?primary_gpu, "Trying to initialize EGL Hardware Acceleration",);
-        match renderer.bind_wl_display(&display_handle) {
-            Ok(_) => info!("EGL hardware-acceleration enabled"),
-            Err(egl::Error::EglExtensionNotSupported(exts)) if exts.iter().all(|ext| *ext == "EGL_WL_bind_wayland_display") => {
-                info!("Failed to intialize EGL hardware-acceleration; this error is safe to ignore");
-            }
-            Err(err) => warn!(?err, "Failed to initialize EGL hardware-acceleration"),
-        }
-    }
-
-    // init dmabuf support with format list from our primary gpu
-    let dmabuf_formats = renderer.dmabuf_formats();
-    let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
-        .build()
-        .context("Failed to build default DMABUF feedback")?;
-    let mut dmabuf_state = DmabufState::new();
-    let global = dmabuf_state.create_global_with_default_feedback::<Xfwl4State<UdevData>>(&display_handle, &default_feedback);
-    state.backend.dmabuf_state = Some((dmabuf_state, global));
-
-    let gpus = &mut state.backend.gpus;
-    state.backend.backends.iter_mut().for_each(|(node, backend_data)| {
-        // Update the per drm surface dmabuf feedback
-        backend_data.surfaces.values_mut().for_each(|surface_data| {
-            if let Some(drm_output) = surface_data.drm_output.as_ref() {
-                surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
-                    drm_output.with_compositor(|compositor| {
-                        get_surface_dmabuf_feedback(primary_gpu, surface_data.render_node, *node, gpus, compositor.surface())
-                    })
-                });
-            }
+    // any display only node can fall back to the primary node for rendering.
+    // If the session is not yet active (background VT), skip device enumeration
+    // entirely — the ActivateSession handler will do it on first wake-up.
+    if state.backend.session.is_active() {
+        let primary_node = primary_gpu.node_with_type(NodeType::Primary).and_then(|node| node.ok());
+        let devices: Vec<_> = udev_dispatcher
+            .as_source_ref()
+            .device_list()
+            .map(|(id, p)| (id, p.to_owned()))
+            .collect();
+        let primary_device = devices.iter().find(|(device_id, _)| {
+            primary_node
+                .map(|primary_node| *device_id == primary_node.dev_id())
+                .unwrap_or(false)
+                || *device_id == primary_gpu.dev_id()
         });
-    });
 
-    // Expose syncobj protocol if supported by primary GPU
-    if let Some(primary_node) = state.backend.primary_gpu.node_with_type(NodeType::Primary).and_then(|x| x.ok())
-        && let Some(backend) = state.backend.backends.get(&primary_node)
-    {
-        let import_device = backend.drm_output_manager.device().device_fd().clone();
-        if supports_syncobj_eventfd(&import_device) {
-            let syncobj_state = DrmSyncobjState::new::<Xfwl4State<UdevData>>(&display_handle, import_device);
-            state.backend.syncobj_state = Some(syncobj_state);
+        if let Some((device_id, path)) = primary_device {
+            let node = DrmNode::from_dev_id(*device_id).context("Failed to get primary GPU node")?;
+            state
+                .device_added(handle.clone(), node, path)
+                .context("Failed to initialize primary GPU node")?;
         }
+
+        let primary_device_id = primary_device.map(|(device_id, _)| *device_id);
+        for (device_id, path) in &devices {
+            if Some(*device_id) == primary_device_id {
+                continue;
+            }
+            if let Err(err) = DrmNode::from_dev_id(*device_id)
+                .map_err(DeviceAddError::DrmNode)
+                .and_then(|node| state.device_added(handle.clone(), node, path))
+            {
+                error!("Skipping device {device_id}: {err}");
+            }
+        }
+
+        #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
+        let mut renderer = state
+            .backend
+            .gpus
+            .single_renderer(&primary_gpu)
+            .context("Failed to get renderer for primary GPU")?;
+
+        state.core.update_shm_formats(renderer.shm_formats());
+
+        #[cfg(feature = "egl")]
+        {
+            info!(?primary_gpu, "Trying to initialize EGL Hardware Acceleration",);
+            match renderer.bind_wl_display(&display_handle) {
+                Ok(_) => info!("EGL hardware-acceleration enabled"),
+                Err(egl::Error::EglExtensionNotSupported(exts)) if exts.iter().all(|ext| *ext == "EGL_WL_bind_wayland_display") => {
+                    info!("Failed to intialize EGL hardware-acceleration; this error is safe to ignore");
+                }
+                Err(err) => warn!(?err, "Failed to initialize EGL hardware-acceleration"),
+            }
+        }
+
+        // init dmabuf support with format list from our primary gpu
+        let dmabuf_formats = renderer.dmabuf_formats();
+        let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
+            .build()
+            .context("Failed to build default DMABUF feedback")?;
+        let mut dmabuf_state = DmabufState::new();
+        let global = dmabuf_state.create_global_with_default_feedback::<Xfwl4State<UdevData>>(&display_handle, &default_feedback);
+        state.backend.dmabuf_state = Some((dmabuf_state, global));
+
+        let gpus = &mut state.backend.gpus;
+        state.backend.backends.iter_mut().for_each(|(node, backend_data)| {
+            // Update the per drm surface dmabuf feedback
+            backend_data.surfaces.values_mut().for_each(|surface_data| {
+                if let Some(drm_output) = surface_data.drm_output.as_ref() {
+                    surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
+                        drm_output.with_compositor(|compositor| {
+                            get_surface_dmabuf_feedback(primary_gpu, surface_data.render_node, *node, gpus, compositor.surface())
+                        })
+                    });
+                }
+            });
+        });
+
+        // Expose syncobj protocol if supported by primary GPU
+        if let Some(primary_node) = state.backend.primary_gpu.node_with_type(NodeType::Primary).and_then(|x| x.ok())
+            && let Some(backend) = state.backend.backends.get(&primary_node)
+        {
+            let import_device = backend.drm_output_manager.device().device_fd().clone();
+            if supports_syncobj_eventfd(&import_device) {
+                let syncobj_state = DrmSyncobjState::new::<Xfwl4State<UdevData>>(&display_handle, import_device);
+                state.backend.syncobj_state = Some(syncobj_state);
+            }
+        }
+    } else {
+        info!("Session not yet active at init; deferring GPU device enumeration to ActivateSession");
     }
 
     event_loop
@@ -494,26 +710,7 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
 
     event_loop
         .handle()
-        .insert_source(udev_backend, move |event, _, state| match event {
-            UdevEvent::Added { device_id, path } => {
-                if let Err(err) = DrmNode::from_dev_id(device_id)
-                    .map_err(DeviceAddError::DrmNode)
-                    .and_then(|node| state.device_added(handle.clone(), node, &path))
-                {
-                    error!("Skipping device {device_id}: {err}");
-                }
-            }
-            UdevEvent::Changed { device_id } => {
-                if let Ok(node) = DrmNode::from_dev_id(device_id) {
-                    state.device_changed(node)
-                }
-            }
-            UdevEvent::Removed { device_id } => {
-                if let Ok(node) = DrmNode::from_dev_id(device_id) {
-                    state.device_removed(handle.clone(), node)
-                }
-            }
-        })
+        .register_dispatcher(udev_dispatcher)
         .map_err(|err| anyhow!("Failed to register udev event source: {err}"))?;
 
     Ok((event_loop, state))
