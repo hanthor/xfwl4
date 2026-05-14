@@ -1,0 +1,20 @@
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/smithay/smithay?rev=fad213e37056f60dea67824e2855a68db6e70011"]
+git = "https://github.com/smithay/smithay"
+rev = "fad213e37056f60dea67824e2855a68db6e70011"
+replace-with = "vendored-sources"
+
+[source."git+https://gitlab.xfce.org/bindings/xfce4-rs.git?rev=02349ff4af699287455ebf1131ccfd55ed0af9f4"]
+git = "https://gitlab.xfce.org/bindings/xfce4-rs.git"
+rev = "02349ff4af699287455ebf1131ccfd55ed0af9f4"
+replace-with = "vendored-sources"
+
+[source."git+https://gitlab.xfce.org/bindings/xfce4-rs.git?rev=4517f9b51e76aedb1d5875300946f012f597b855"]
+git = "https://gitlab.xfce.org/bindings/xfce4-rs.git"
+rev = "4517f9b51e76aedb1d5875300946f012f597b855"
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"

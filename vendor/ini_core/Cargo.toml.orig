@@ -1,0 +1,16 @@
+[package]
+name = "ini_core"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+
+authors = ["Casper <CasualX@users.noreply.github.com>"]
+description = "Implements a pretty bare-bones streaming INI parser."
+documentation = "https://docs.rs/ini_core/"
+repository = "https://github.com/CasualX/ini_core"
+readme = "readme.md"
+keywords = ["ini", "core", "config", "configuration", "parser"]
+categories = ["config", "parser-implementations"]
+
+[dependencies]
+cfg-if = "1.0"

@@ -1,0 +1,11 @@
+[package]
+name = "fps_ticker"
+version = "1.0.0"
+authors = ["mitchmindtree <mitchell.nordine@gmail.com>"]
+description = "A simple crate for measuring the average, minimum and maximum frame rate over a window of time."
+readme = "README.md"
+keywords = ["creative", "sketch", "graphics", "audio"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mitchmindtree/fps_ticker.git"
+homepage = "https://github.com/mitchmindtree/fps_ticker"
+edition = "2018"

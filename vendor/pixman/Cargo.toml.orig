@@ -1,0 +1,31 @@
+[package]
+authors = ["Christian Meissl <meissl.christian@gmail.com>"]
+categories = ["rendering", "api-bindings"]
+description = "Pixman is a low-level software library for pixel manipulation, providing features such as image compositing and trapezoid rasterization."
+documentation = "https://docs.rs/pixman/"
+edition = "2021"
+keywords = ["pixman", "2d"]
+license = "MIT"
+name = "pixman"
+repository = "https://github.com/cmeissl/pixman-rs"
+rust-version = "1.65.0"
+version = "0.2.1"
+readme = "../README.md"
+
+[package.metadata.docs.rs]
+features = ["drm-fourcc"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+drm-fourcc = {version = "2.2.0", optional = true}
+paste = "1.0.14"
+pixman-sys = {version = "0.1.0", path = "../pixman-sys"}
+thiserror = "1.0.50"
+
+[dev-dependencies]
+image = "0.24.7"
+
+[features]
+default = []
+drm-fourcc = ["dep:drm-fourcc"]
+sync = []

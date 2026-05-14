@@ -1,0 +1,18 @@
+[options]
+library = "Libxfce4ui"
+version = "2.0"
+min_cfg_version = "4.20"
+target_path = "."
+girs_directories = [
+    "../gir-files.xfce/",
+    "../gir-files.gtk/",
+]
+work_mode = "sys"
+single_version_file = true
+external_libraries = [
+    "Glib",
+    "GObject",
+    "Gio",
+    "Gdk",
+    "Gtk",
+]

@@ -1,0 +1,35 @@
+[package]
+authors = ["Christian Meissl <meissl.christian@gmail.com>"]
+categories = ["api-bindings"]
+description = "EDID and DisplayID library."
+documentation = "https://docs.rs/libdisplay-info/"
+edition = "2021"
+version = "0.3.0"
+keywords = ["libdisplay", "DisplayID", "EDID"]
+license = "MIT"
+name = "libdisplay-info"
+repository = "https://github.com/Smithay/libdisplay-info-rs"
+readme = "../README.md"
+rust-version = "1.70.0"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+v0_2 = ["libdisplay-info-sys/v0_2"]
+v0_3 = ["libdisplay-info-sys/v0_3"]
+
+[dependencies]
+libdisplay-info-sys = { version = "0.3.0", path = "../libdisplay-info-sys", features = ["auto"] }
+libc = "0.2.155"
+thiserror = "2.0.9"
+libdisplay-info-derive = { version = "0.1.1", path = "../libdisplay-info-derive" }
+bitflags = "2.6"
+
+[dev-dependencies]
+anyhow = "1.0"
+
+[[example]]
+name = "decode"
+path = "examples/decode.rs"

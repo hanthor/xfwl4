@@ -1,0 +1,36 @@
+[package]
+authors = ["Christian Meissl <meissl.christian@gmail.com>"]
+categories = ["api-bindings"]
+description = "Low-level bindings for libdisplay-info."
+documentation = "https://docs.rs/libdisplay-info-sys/"
+edition = "2021"
+version = "0.3.0"
+keywords = ["libdisplay", "DisplayID", "EDID"]
+license = "MIT"
+name = "libdisplay-info-sys"
+repository = "https://github.com/Smithay/libdisplay-info-rs"
+readme = "README.md"
+rust-version = "1.70.0"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["auto"]
+auto = []
+v0_1 = []
+v0_2 = []
+v0_3 = []
+
+[build-dependencies]
+system-deps = "7.0.3"
+semver = "1.0.24"
+
+[dependencies]
+
+[package.metadata.system-deps.libdisplay-info]
+name = "libdisplay-info"
+version = ">= 0.1.0, < 0.4.0"
+v0_2 = { version = "0.2.0" }
+v0_3 = { version = "0.3.0" }

@@ -1,0 +1,39 @@
+name: CI
+
+on: [push, pull_request]
+
+env:
+  minrust: 1.36.0
+
+jobs:
+  Lints:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+        if: always()
+
+  Test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check --features serde
+      - run: cargo test
+
+  MSRV:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install ${{ env.minrust }} toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.minrust }}
+      - run: cargo test

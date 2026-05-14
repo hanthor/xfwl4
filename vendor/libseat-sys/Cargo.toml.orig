@@ -1,0 +1,24 @@
+[package]
+name = "libseat-sys"
+description = "libseat bindings"
+version = "0.2.0"
+authors = ["Poly <marynczak.bartlomiej@gmail.com>"]
+edition = "2018"
+
+keywords = ["libseat"]
+license = "MIT"
+repository = "https://github.com/PolyMeilex/libseat-rs"
+documentation = "https://docs.rs/libseat-sys"
+
+[features]
+use_bindgen = ["bindgen"]
+# Used to disable linking in docs.rs enviroment
+docs_rs = []
+
+[build-dependencies]
+bindgen = { version = "0.58.1", optional = true }
+pkg-config = { version = "0.3.19" }
+
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["docs_rs"]

@@ -1,0 +1,41 @@
+[options]
+library = "Libxfce4kbdprivate"
+version = "3.0"
+min_cfg_version = "4.20"
+target_path = "."
+girs_directories = [
+    "../gir-files.xfce/",
+    "../gir-filex.gtk/",
+]
+work_mode = "normal"
+single_version_file = true
+generate_safety_asserts = false
+deprecate_by_min_version = true
+trust_return_value_nullability = true
+
+generate = []
+
+manual = [
+    "GLib.Error",
+    "GObject.Object",
+    "GObject.Value",
+]
+
+# XfceShortcut has been in Libxfce4kbd-private much longer than 4.21.4, but it
+# was never a boxed type until 4.21.4, and xfce_shortcut_copy() didn't exist
+# before 4.21.4.  Unfortunately that means these types just aren't usable
+# before 4.21.4.
+
+[[object]]
+name = "Libxfce4kbdprivate.Shortcut"
+status = "generate"
+manual_traits = "ShortcutManualExt"
+version = "4.21.4"
+
+[[object]]
+name = "Libxfce4kbdprivate.ShortcutsProvider"
+status = "generate"
+version = "4.21.4"
+    [[object.function]]
+    name = "free_providers"
+    ignore = true

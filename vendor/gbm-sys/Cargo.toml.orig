@@ -1,0 +1,31 @@
+[package]
+name = "gbm-sys"
+version = "0.4.0"
+authors = ["Drakulix (Victor Brekenfeld)"]
+build = "build.rs"
+description = "Bindgen generated unsafe libgbm wrapper"
+documentation = "https://Drakulix.github.io/gbm.rs/gbm-sys"
+repository = "https://github.com/Drakulix/gbm.rs/tree/master/gbm-sys"
+keywords = ["gbm", "bindings"]
+categories = ["external-ffi-bindings"]
+license = "MIT"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[build-dependencies.bindgen]
+version = "0.69"
+optional = true
+
+# Specify version of bindgen deps to fix `check-minimal` test
+[build-dependencies]
+proc-macro2 = { version = "1.0.69", optional = true }
+regex = { version = "1.10", optional = true }
+
+[dependencies]
+libc = "0.2"
+
+[features]
+use_bindgen = ["bindgen", "dep:proc-macro2", "dep:regex"]
+update_bindings = ["use_bindgen"]

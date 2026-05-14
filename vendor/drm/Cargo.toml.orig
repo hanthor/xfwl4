@@ -1,0 +1,34 @@
+[package]
+name = "drm"
+description = "Safe, low-level bindings to the Direct Rendering Manager API"
+repository = "https://github.com/Smithay/drm-rs"
+version = "0.14.1"
+license = "MIT"
+authors = ["Tyler Slabinski <tslabinski@slabity.net>", "Victoria Brekenfeld <crates-io@drakulix.de>"]
+exclude = [".gitignore", ".github"]
+rust-version = "1.66"
+edition = "2021"
+
+[dependencies]
+bitflags = "2"
+bytemuck = { version = "1.12", features = ["extern_crate_alloc", "derive"] }
+drm-ffi = { path = "drm-ffi", version = "0.9.0" }
+drm-fourcc = "^2.2.0"
+rustix = { version = "0.38.22", features = ["mm", "fs"] }
+
+[target.'cfg(target_os = "freebsd")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+image = { version = "0.24", default-features = false, features = ["png"] }
+rustix = { version = "0.38.22", features = ["event", "mm"] }
+rustyline = "13"
+
+[features]
+use_bindgen = ["drm-ffi/use_bindgen"]
+
+[workspace]
+members = [
+    "drm-ffi",
+    "drm-ffi/drm-sys",
+]

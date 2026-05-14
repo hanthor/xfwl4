@@ -1,0 +1,15 @@
+[package]
+authors = ["Christian Meissl <meissl.christian@gmail.com>"]
+categories = ["rendering", "api-bindings"]
+description = "Pixman is a low-level software library for pixel manipulation, providing features such as image compositing and trapezoid rasterization."
+documentation = "https://docs.rs/pixman-sys/"
+edition = "2021"
+keywords = ["pixman", "2d"]
+license = "MIT"
+name = "pixman-sys"
+repository = "https://github.com/cmeissl/pixman-rs"
+rust-version = "1.65.0"
+version = "0.1.0"
+readme = "README.md"
+
+[dependencies]

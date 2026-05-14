@@ -1,0 +1,179 @@
+[options]
+library = "Xfconf"
+version = "0"
+min_cfg_version = "4.20"
+target_path = "."
+girs_directories = [
+    "../gir-files.xfce/",
+    "../gir-files.gtk/",
+]
+work_mode = "normal"
+single_version_file = true
+generate_safety_asserts = false
+deprecate_by_min_version = true
+trust_return_value_nullability = true
+
+generate = []
+
+manual = [
+    "GLib.Error",
+    "GObject.Object",
+    "GObject.Value",
+]
+
+[[object]]
+name = "Xfconf.*"
+status = "generate"
+manual_traits = "ChannelBindingExt"
+    [[object.function]]
+    name = "named_struct_register"
+    ignore = true
+    [[object.function]]
+    name = "array_free"
+    ignore = true
+    [[object.function]]
+    name = "shutdown"
+    manual = true
+    generate_doc = false
+    [[object.function]]
+    name = "value_get_uint16"
+    ignore = true
+    [[object.function]]
+    name = "value_get_int16"
+    ignore = true
+    [[object.function]]
+    name = "value_set_uint16"
+    ignore = true
+    [[object.function]]
+    name = "value_set_int16"
+    ignore = true
+    [[object.function]]
+    name = "property_bind_gdkcolor"
+    ignore = true
+    [[object.function]]
+    name = "property_bind"
+    rename = "bind_property"
+    manual = true
+    doc_trait_name = "ChannelBindingExt"
+    [[object.function]]
+    name = "property_bind_gdkrgba"
+    rename = "bind_gdkrgba_property"
+    manual = true
+    doc_trait_name = "ChannelBindingExt"
+    [[object.function]]
+    name = "property_unbind"
+    rename = "unbind"
+    manual = true
+    doc_trait_name = "ChannelBindingExt"
+    [[object.function]]
+    name = "property_unbind_by_property"
+    rename = "unbind_by_property"
+    manual = true
+    doc_trait_name = "ChannelBindingExt"
+    [[object.function]]
+    name = "property_unbind_all"
+    rename = "unbind_all"
+    manual = true
+    doc_trait_name = "ChannelBindingExt"
+
+[[object]]
+name = "Xfconf.Channel"
+status = "generate"
+manual_traits = "ChannelExtManual"
+    [[object.function]]
+    name = "get_property"
+    manual = true
+    doc_trait_name = "ChannelExtManual"
+    [[object.function]]
+    name = "get_bool"
+    ignore = true
+    [[object.function]]
+    name = "get_int"
+    ignore = true
+    [[object.function]]
+    name = "get_uint"
+    ignore = true
+    [[object.function]]
+    name = "get_uint64"
+    ignore = true
+    [[object.function]]
+    name = "get_double"
+    ignore = true
+    [[object.function]]
+    name = "get_string"
+    ignore = true
+    [[object.function]]
+    name = "get_arrayv"
+    ignore = true
+    [[object.function]]
+    name = "set_property"
+    manual = true
+    doc_trait_name = "ChannelExtManual"
+    [[object.function]]
+    name = "set_bool"
+    ignore = true
+    [[object.function]]
+    name = "set_int"
+    ignore = true
+    [[object.function]]
+    name = "set_uint"
+    ignore = true
+    [[object.function]]
+    name = "set_uint64"
+    ignore = true
+    [[object.function]]
+    name = "set_double"
+    ignore = true
+    [[object.function]]
+    name = "set_string"
+    ignore = true
+    [[object.function]]
+    name = "set_arrayv"
+    rename = "set_array"
+    ignore = true
+    [[object.function]]
+    name = "set_array"
+    ignore = true
+    [[object.function]]
+    name = "set_array_valist"
+    ignore = true
+    [[object.function]]
+    name = "get_array"
+    ignore = true
+    [[object.function]]
+    name = "get_array_valist"
+    ignore = true
+    [[object.function]]
+    name = "set_named_struct"
+    ignore = true
+    [[object.function]]
+    name = "get_named_struct"
+    ignore = true
+    [[object.function]]
+    name = "set_struct"
+    ignore = true
+    [[object.function]]
+    name = "set_structv"
+    ignore = true
+    [[object.function]]
+    name = "set_struct_valist"
+    ignore = true
+    [[object.function]]
+    name = "get_struct"
+    ignore = true
+    [[object.function]]
+    name = "get_structv"
+    ignore = true
+    [[object.function]]
+    name = "get_struct_valist"
+    ignore = true
+    [[object.function]]
+    name = "set_string_list"
+    ignore = true
+    [[object.function]]
+    name = "get_string_list"
+    ignore = true
+    [[object.function]]
+    name = "get_properties"
+    manual = true
+    doc_trait_name = "ChannelExtManual"

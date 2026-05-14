@@ -1,0 +1,20 @@
+[package]
+authors = ["Christian Meissl <meissl.christian@gmail.com>"]
+categories = ["api-bindings"]
+description = "Utility crate for managing FFI bindings in libdisplay-info."
+documentation = "https://docs.rs/libdisplay-info-derive/"
+edition = "2021"
+version = "0.1.1"
+keywords = ["libdisplay", "DisplayID", "EDID"]
+license = "MIT"
+name = "libdisplay-info-derive"
+repository = "https://github.com/Smithay/libdisplay-info-rs"
+rust-version = "1.70.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
