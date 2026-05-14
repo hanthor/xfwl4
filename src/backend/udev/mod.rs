@@ -454,8 +454,13 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
                         }
                     }
 
+                    let render_primary = primary_gpu
+                        .node_with_type(NodeType::Render)
+                        .and_then(Result::ok)
+                        .unwrap_or(primary_gpu);
+
                     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-                    let mut renderer = match state.backend.gpus.single_renderer(&primary_gpu) {
+                    let mut renderer = match state.backend.gpus.single_renderer(&render_primary) {
                         Err(err) => {
                             error!("Failed to get renderer for primary GPU on ActivateSession: {err}");
                             return;
@@ -635,11 +640,11 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
             }
         }
 
-        // On virtio-gpu+llvmpipe, EGL reports no render node so device_added registers
-        // the card-type node (e.g. card0) instead of renderD128. Compute the fallback
-        // card-type node before any gpus borrow to satisfy the borrow checker.
+        // When primary_gpu is a Primary-type node (e.g. card0) but device_added registered
+        // the GPU under its Render-type node (e.g. renderD128), gpus.single_renderer(&card0)
+        // fails. Derive the render node from primary_gpu via sysfs before borrowing gpus.
         let fallback_gpu = primary_gpu
-            .node_with_type(NodeType::Primary)
+            .node_with_type(NodeType::Render)
             .and_then(Result::ok);
 
         #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
@@ -647,12 +652,12 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
             Ok(r) => r,
             Err(_) => {
                 let card_node = fallback_gpu
-                    .ok_or_else(|| anyhow::anyhow!("no renderer available for primary GPU and no card-type fallback"))?;
+                    .ok_or_else(|| anyhow::anyhow!("no renderer available for primary GPU and no render-node fallback"))?;
                 state
                     .backend
                     .gpus
                     .single_renderer(&card_node)
-                    .context("Failed to get renderer for primary GPU (card fallback)")?
+                    .context("Failed to get renderer for primary GPU (render-node fallback)")?
             }
         };
 
