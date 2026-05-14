@@ -269,10 +269,22 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
             None => all_gpus(session.seat())
                 .context("Failed to query all GPUS")?
                 .into_iter()
-                .find_map(|x| DrmNode::from_path(x).ok())
+                .find_map(|x| {
+                    let node = DrmNode::from_path(x).ok()?;
+                    // Prefer the render node; fall back to whatever type we got
+                    node.node_with_type(NodeType::Render)
+                        .and_then(Result::ok)
+                        .or(Some(node))
+                })
                 .ok_or_else(|| anyhow!("No usable GPU found")),
         }
     }?;
+    // Normalize to Render-type so gpus.single_renderer(&primary_gpu) matches the key used
+    // by device_added (which always registers GPUs under their render node, e.g. renderD128).
+    let primary_gpu = primary_gpu
+        .node_with_type(NodeType::Render)
+        .and_then(Result::ok)
+        .unwrap_or(primary_gpu);
     info!("Using {primary_gpu} as primary GPU");
 
     let gpus = GpuManager::new(GbmGlesBackend::with_factory(move |display| {
