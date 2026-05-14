@@ -68,7 +68,10 @@ fn ui_main() -> anyhow::Result<()> {
         window_menu: None,
     };
 
-    let display_name = gtk::gdk::Display::default().unwrap().name();
+    // Ensure we have a valid display before trying to connect
+    let display = gtk::gdk::Display::default()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get GTK display - Wayland socket may not be ready"))?;
+    let display_name = display.name();
     let state = compositor_ui_protocol::connect(&display_name, state)?;
 
     let _settings_sync = GtkSettingsSync::new();
@@ -80,9 +83,11 @@ fn ui_main() -> anyhow::Result<()> {
         source.destroy();
     }
 
-    let settings = gtk::Settings::default().unwrap();
-    for id in settings_notifiers {
-        glib::signal_handler_disconnect(&settings, id);
+    // Safely handle settings cleanup
+    if let Some(settings) = gtk::Settings::default() {
+        for id in settings_notifiers {
+            glib::signal_handler_disconnect(&settings, id);
+        }
     }
 
     Ok(())

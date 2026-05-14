@@ -68,7 +68,7 @@ use smithay::{
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
         },
         drm::{
-            CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmError, DrmEvent, DrmNode, DrmSurface,
+            CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmError, DrmEvent, DrmNode, DrmSurface, NodeType,
             exporter::gbm::GbmFramebufferExporter,
             output::{DrmOutputManager, DrmOutputRenderElements},
         },
@@ -203,7 +203,9 @@ impl Xfwl4State<UdevData> {
                 warn!("EGL device is software-rendered (llvmpipe); proceeding anyway for VM/test environments");
             }
 
-            let render_node = egl_device.try_get_render_node().ok().flatten().unwrap_or(node);
+            let render_node = egl_device.try_get_render_node().ok().flatten()
+                .or_else(|| node.node_with_type(NodeType::Render).ok().flatten())
+                .unwrap_or(node);
             self.backend
                 .gpus
                 .as_mut()

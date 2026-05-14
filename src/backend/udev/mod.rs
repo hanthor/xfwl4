@@ -636,10 +636,17 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
         }
 
         #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
+        let renderer_node = state
+            .backend
+            .backends
+            .values()
+            .find_map(|b| b.render_node)
+            .unwrap_or(primary_gpu);
         let mut renderer = state
             .backend
             .gpus
-            .single_renderer(&primary_gpu)
+            .single_renderer(&renderer_node)
+            .or_else(|_| state.backend.gpus.single_renderer(&primary_gpu))
             .context("Failed to get renderer for primary GPU")?;
 
         state.core.update_shm_formats(renderer.shm_formats());

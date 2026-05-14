@@ -129,7 +129,7 @@ pub fn parse() -> anyhow::Result<Cli> {
         if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("WAYLAND_SOCKET").is_ok() {
             #[cfg(feature = "winit")]
             {
-                Ok(ChosenBackend::Winit)
+                Ok::<ChosenBackend, anyhow::Error>(ChosenBackend::Winit)
             }
             #[cfg(not(feature = "winit"))]
             {
@@ -140,13 +140,13 @@ pub fn parse() -> anyhow::Result<Cli> {
         } else if std::env::var("DISPLAY").is_ok() {
             #[cfg(feature = "x11")]
             {
-                Ok(ChosenBackend::X11)
+                Ok::<ChosenBackend, anyhow::Error>(ChosenBackend::X11)
             }
             #[cfg(not(feature = "x11"))]
             {
                 #[cfg(feature = "winit")]
                 {
-                    Ok(ChosenBackend::Winit)
+                    Ok::<ChosenBackend, anyhow::Error>(ChosenBackend::Winit)
                 }
                 #[cfg(not(feature = "winit"))]
                 {
@@ -158,7 +158,7 @@ pub fn parse() -> anyhow::Result<Cli> {
         } else {
             #[cfg(feature = "udev")]
             {
-                Ok(ChosenBackend::Tty)
+                Ok::<ChosenBackend, anyhow::Error>(ChosenBackend::Tty)
             }
             #[cfg(not(feature = "udev"))]
             {
