@@ -200,7 +200,7 @@ impl Xfwl4State<UdevData> {
             let egl_device = EGLDevice::device_for_display(&display).map_err(DeviceAddError::AddNode)?;
 
             if egl_device.is_software() {
-                return Err(DeviceAddError::NoRenderNode);
+                warn!("EGL device is software-rendered (llvmpipe); proceeding anyway for VM/test environments");
             }
 
             let render_node = egl_device.try_get_render_node().ok().flatten().unwrap_or(node);
