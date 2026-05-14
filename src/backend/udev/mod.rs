@@ -636,17 +636,21 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
         }
 
         #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-        let renderer_node = state
-            .backend
-            .backends
-            .values()
-            .find_map(|b| b.render_node)
-            .unwrap_or(primary_gpu);
         let mut renderer = state
             .backend
             .gpus
-            .single_renderer(&renderer_node)
-            .or_else(|_| state.backend.gpus.single_renderer(&primary_gpu))
+            .single_renderer(&primary_gpu)
+            .or_else(|_| {
+                // primary_gpu is a render-type node (e.g. renderD128); on virtio-gpu+llvmpipe
+                // EGL reports no render node so we register the card-type node instead.
+                // Try the corresponding card-type node (e.g. card0) as a fallback.
+                primary_gpu
+                    .node_with_type(NodeType::Primary)
+                    .ok()
+                    .flatten()
+                    .and_then(|card_node| state.backend.gpus.single_renderer(&card_node).ok())
+                    .ok_or_else(|| anyhow::anyhow!("no renderer available for either render or card node"))
+            })
             .context("Failed to get renderer for primary GPU")?;
 
         state.core.update_shm_formats(renderer.shm_formats());
