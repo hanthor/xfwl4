@@ -637,22 +637,24 @@ pub fn init(config: UdevConfig) -> anyhow::Result<(EventLoop<'static, Xfwl4State
 
         // On virtio-gpu+llvmpipe, EGL reports no render node so device_added registers
         // the card-type node (e.g. card0) instead of renderD128. Compute the fallback
-        // node before borrowing gpus to satisfy the borrow checker.
+        // card-type node before any gpus borrow to satisfy the borrow checker.
         let fallback_gpu = primary_gpu
             .node_with_type(NodeType::Primary)
             .and_then(Result::ok);
 
         #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-        let mut renderer = state
-            .backend
-            .gpus
-            .single_renderer(&primary_gpu)
-            .or_else(|_| {
-                fallback_gpu
-                    .and_then(|card_node| state.backend.gpus.single_renderer(&card_node).ok())
-                    .ok_or_else(|| anyhow::anyhow!("no renderer available for either render or card node"))
-            })
-            .context("Failed to get renderer for primary GPU")?;
+        let mut renderer = match state.backend.gpus.single_renderer(&primary_gpu) {
+            Ok(r) => r,
+            Err(_) => {
+                let card_node = fallback_gpu
+                    .ok_or_else(|| anyhow::anyhow!("no renderer available for primary GPU and no card-type fallback"))?;
+                state
+                    .backend
+                    .gpus
+                    .single_renderer(&card_node)
+                    .context("Failed to get renderer for primary GPU (card fallback)")?
+            }
+        };
 
         state.core.update_shm_formats(renderer.shm_formats());
 
