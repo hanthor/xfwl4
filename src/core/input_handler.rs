@@ -78,7 +78,7 @@ use crate::{
         TabletToolButtonData, TabletToolProximityData, TabletToolTipData, TouchInputEvent, TranslatedInput,
     },
     core::{
-        config::{ShortcutKey, WmShortcutAction},
+        config::{EasyClickKey, ShortcutKey, WmShortcutAction},
         edge::ScreenEdge,
         focus::{KeyboardFocusTarget, PointerFocusTarget},
         handlers::xfwl4_compositor_ui::ActionLocation,
@@ -890,6 +890,12 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
     fn easy_key_pressed(&mut self) -> bool {
         if let Some(keyboard) = self.core.seat.get_keyboard() {
             let easy_key = self.core.config.easy_click();
+
+            // EasyClickKey::None means the feature is disabled; never swallow events.
+            if easy_key == EasyClickKey::None {
+                return false;
+            }
+
             let modifier_mask = keyboard.with_xkb_state(self, |ctx| {
                 let xkb = ctx.xkb().lock().unwrap();
                 // SAFETY: 'state' won't live longer than 'xkb'.
