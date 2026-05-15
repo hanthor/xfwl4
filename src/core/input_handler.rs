@@ -753,8 +753,11 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
         let serial = SERIAL_COUNTER.next_serial();
 
         let location = self.core.pointer.current_location();
-        let (target, window) = self
-            .surface_under(location)
+        let surface_result = self.surface_under(location);
+        debug!(
+            "pointer_button: button={button} state={state:?} location={location:?} surface_under={surface_result:?}",
+        );
+        let (target, window) = surface_result
             .and_then(|(target, _)| self.window_for_pointer_focus_target(&target).map(|window| (target, window)))
             .unzip();
 
@@ -861,6 +864,8 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
 
         if !swallow_event {
             let pointer = self.core.pointer.clone();
+            let current_focus = pointer.current_focus();
+            debug!("pointer_button: delivering button={button} state={state:?} to current_focus={current_focus:?} swallow_event=false");
             pointer.button(
                 self,
                 &ButtonEvent {
@@ -1523,9 +1528,10 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
             {
                 under = Some(focus)
             } else if let Some(focus) = workspace.window_under(pos).and_then(|(window, loc)| {
-                window
-                    .surface_under(pos - loc.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(surface, surf_loc)| (surface, surf_loc + loc))
+                let local = pos - loc.to_f64();
+                let surf = window.surface_under(local, WindowSurfaceType::ALL);
+                debug!("window_under: pos={pos:?} render_loc={loc:?} local={local:?} surface={:?}", surf.as_ref().map(|(s, l)| (format!("{s:?}"), l)));
+                surf.map(|(surface, surf_loc)| (surface, surf_loc + loc))
             }) {
                 under = Some(focus);
             } else if let Some(focus) = layers
