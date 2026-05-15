@@ -862,7 +862,9 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
             false
         };
 
-        if !swallow_event {
+        if swallow_event {
+            debug!("pointer_button: SWALLOWED button={button} state={state:?}");
+        } else {
             let pointer = self.core.pointer.clone();
             let current_focus = pointer.current_focus();
             debug!("pointer_button: delivering button={button} state={state:?} to current_focus={current_focus:?} swallow_event=false");
@@ -895,7 +897,9 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
                 state.gdk_modifier_mask()
             }) & !ModifierType::LOCK_MASK;
 
-            modifier_mask == easy_key.modifier_mask()
+            let result = modifier_mask == easy_key.modifier_mask();
+            debug!("easy_key_pressed: modifier_mask={modifier_mask:?} easy_key={:?} easy_key_mask={:?} result={result}", easy_key, easy_key.modifier_mask());
+            result
         } else {
             false
         }
