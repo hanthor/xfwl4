@@ -140,9 +140,14 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
             self.set_window_urgent_state(&window, true);
         }
 
-        let workspace = self.core.workspace_manager.active_workspace_mut();
-        if let Some(bbox) = workspace.window_bbox(&window) {
-            let _ = surface.configure(Some(bbox));
+        let workspace = self.core.workspace_manager.active_workspace();
+        if let Some(element_loc) = workspace.window_location(&window) {
+            let deco_offset = window
+                .decoration_state()
+                .window_decorations()
+                .map(|d| d.decorations_offset())
+                .unwrap_or_default();
+            let _ = surface.configure(Some(Rectangle::new(element_loc + deco_offset, surface.geometry().size)));
         }
 
         let outputs = self.core.workspace_manager.active_workspace_mut().outputs_for_window(&window);
@@ -249,7 +254,13 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
             .workspace_manager
             .find_window(|elem| matches!(elem.0.x11_surface(), Some(w) if w == &window))
         {
-            self.core.workspace_manager.relocate_window(&elem, geometry.loc, false);
+            // geometry.loc is the content position; subtract decoration offset to get frame position.
+            let deco_offset = elem
+                .decoration_state()
+                .window_decorations()
+                .map(|d| d.decorations_offset())
+                .unwrap_or_default();
+            self.core.workspace_manager.relocate_window(&elem, geometry.loc - deco_offset, false);
             // TODO: We don't properly handle the order of override-redirect windows here,
             //       they are always mapped top and then never reordered.
         }

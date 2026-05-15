@@ -470,7 +470,23 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                 WindowSurface::X11(surface) => {
                     let _ = surface.set_maximized(false);
                     if let Some(old_geom) = old_geom {
-                        let _ = surface.configure(old_geom);
+                        let deco_offset = window
+                            .decoration_state()
+                            .window_decorations()
+                            .map(|d| d.decorations_offset())
+                            .unwrap_or_default();
+                        let deco_size = window
+                            .decoration_state()
+                            .window_decorations()
+                            .map(|d| (
+                                d.left_decoration_width() + d.right_decoration_width(),
+                                d.top_decoration_height() + d.bottom_decoration_height(),
+                            ))
+                            .unwrap_or((0, 0));
+                        let _ = surface.configure(Rectangle::new(
+                            old_geom.loc + deco_offset,
+                            (old_geom.size.w - deco_size.0, old_geom.size.h - deco_size.1).into(),
+                        ));
                     }
                 }
             }
@@ -525,7 +541,12 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
 
                 #[cfg(feature = "xwayland")]
                 WindowSurface::X11(surface) => {
-                    let _ = surface.configure(geometry);
+                    let deco_offset = window
+                        .decoration_state()
+                        .window_decorations()
+                        .map(|d| d.decorations_offset())
+                        .unwrap_or_default();
+                    let _ = surface.configure(Rectangle::new(geometry.loc + deco_offset, geometry.size));
                     self.core.workspace_manager.relocate_window(window, geometry.loc, false);
                 }
             }
@@ -644,7 +665,12 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                     #[cfg(feature = "xwayland")]
                     WindowSurface::X11(surface) => {
                         let _ = surface.set_maximized(matches!(layout, WindowLayout::Maximized));
-                        let _ = surface.configure(geometry);
+                        let deco_offset = window
+                            .decoration_state()
+                            .window_decorations()
+                            .map(|d| d.decorations_offset())
+                            .unwrap_or_default();
+                        let _ = surface.configure(Rectangle::new(geometry.loc + deco_offset, geometry.size));
                     }
                 }
 
@@ -705,7 +731,23 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
                 #[cfg(feature = "xwayland")]
                 WindowSurface::X11(surface) => {
                     if let Some(saved_geom) = saved_geom {
-                        let _ = surface.configure(saved_geom);
+                        let deco_offset = window
+                            .decoration_state()
+                            .window_decorations()
+                            .map(|d| d.decorations_offset())
+                            .unwrap_or_default();
+                        let deco_size = window
+                            .decoration_state()
+                            .window_decorations()
+                            .map(|d| (
+                                d.left_decoration_width() + d.right_decoration_width(),
+                                d.top_decoration_height() + d.bottom_decoration_height(),
+                            ))
+                            .unwrap_or((0, 0));
+                        let _ = surface.configure(Rectangle::new(
+                            saved_geom.loc + deco_offset,
+                            (saved_geom.size.w - deco_size.0, saved_geom.size.h - deco_size.1).into(),
+                        ));
                     }
                 }
             }
@@ -911,13 +953,24 @@ impl<BackendData: Backend + 'static> Xfwl4State<BackendData> {
             #[cfg(feature = "xwayland")]
             WindowSurface::X11(surface) => {
                 let _ = surface.set_fullscreen(false);
-                if let Some(workspace) = self.core.workspace_manager.workspace_for_window_mut(window) {
-                    let _ = surface.configure(workspace.window_bbox(window));
-                }
+                // Re-enable decorations first so deco_offset is correct for the configure.
                 if !surface.is_decorated() {
                     self.enable_decorations_for_window(window);
                 } else {
                     window.disable_decorations();
+                }
+                if let Some(workspace) = self.core.workspace_manager.workspace_for_window(window) {
+                    if let Some(element_loc) = workspace.window_location(window) {
+                        let deco_offset = window
+                            .decoration_state()
+                            .window_decorations()
+                            .map(|d| d.decorations_offset())
+                            .unwrap_or_default();
+                        let _ = surface.configure(Some(Rectangle::new(
+                            element_loc + deco_offset,
+                            surface.geometry().size,
+                        )));
+                    }
                 }
             }
         }

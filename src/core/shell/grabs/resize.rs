@@ -332,7 +332,12 @@ fn send_resize_configure<BackendData: Backend>(data: &mut Xfwl4State<BackendData
         #[cfg(feature = "xwayland")]
         WindowSurface::X11(x11) => {
             if let Some(location) = data.core.workspace_manager.active_workspace().window_location(window) {
-                let _ = x11.configure(Rectangle::new(location, size));
+                let deco_offset = window
+                    .decoration_state()
+                    .window_decorations()
+                    .map(|d| d.decorations_offset())
+                    .unwrap_or_default();
+                let _ = x11.configure(Rectangle::new(location + deco_offset, size));
             }
         }
     }
@@ -409,7 +414,12 @@ fn finish_resize_op<BackendData: Backend>(
                     }
                     data.core.workspace_manager.relocate_window(window, location, true);
                 }
-                let _ = x11.configure(Rectangle::new(location, last_window_size));
+                let deco_offset = window
+                    .decoration_state()
+                    .window_decorations()
+                    .map(|d| d.decorations_offset())
+                    .unwrap_or_default();
+                let _ = x11.configure(Rectangle::new(location + deco_offset, last_window_size));
             }
 
             transition_to_waiting_for_commit(window);
@@ -627,7 +637,12 @@ fn finish_wireframe_resize<BackendData: Backend>(
                     .active_workspace()
                     .window_location(window)
                     .unwrap_or_default();
-                let _ = x11.configure(Rectangle::new(location, last_window_size));
+                let deco_offset = window
+                    .decoration_state()
+                    .window_decorations()
+                    .map(|d| d.decorations_offset())
+                    .unwrap_or_default();
+                let _ = x11.configure(Rectangle::new(location + deco_offset, last_window_size));
             }
         }
     }
