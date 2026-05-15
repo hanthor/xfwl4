@@ -232,6 +232,30 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
 
             self.x11_update_window_allowed_actions(&window);
         }
+
+        let StackResult {
+            location,
+            allow_activate,
+            needs_attention,
+        } = self.stack_new_window(&window);
+        self.place_window(&window, surface.geometry().size, location, allow_activate);
+
+        if needs_attention {
+            self.set_window_urgent_state(&window, true);
+        }
+
+        let workspace = self.core.workspace_manager.active_workspace();
+        if let Some(element_loc) = workspace.window_location(&window) {
+            let deco_offset = window
+                .decoration_state()
+                .window_decorations()
+                .map(|d| d.decorations_offset())
+                .unwrap_or_default();
+            let _ = surface.configure(Some(Rectangle::new(element_loc + deco_offset, surface.geometry().size)));
+        }
+
+        let outputs = self.core.workspace_manager.active_workspace_mut().outputs_for_window(&window);
+        self.core.toplevel_created::<Self>(&window, outputs, parent.as_ref());
     }
 
     fn mapped_override_redirect_window(&mut self, _xwm: XwmId, surface: X11Surface) {
@@ -344,15 +368,13 @@ impl<BackendData: Backend> XwmHandler for Xfwl4State<BackendData> {
             .workspace_manager
             .find_window(|elem| matches!(elem.0.x11_surface(), Some(w) if w == &window))
         {
-            // `geometry.loc` is the X11 rect origin.  For CSD X11 windows the Space
-            // position represents the visible-content origin (so smithay's
-            // `render_location = Space - geometry().loc` cancels the extents offset
-            // back out), so shift inward by the frame extents before relocating.
-            let mut new_loc = geometry.loc;
-            let frame_extents = window.frame_extents();
-            new_loc.x += frame_extents.left;
-            new_loc.y += frame_extents.top;
-            self.core.workspace_manager.relocate_window(&elem, new_loc, false);
+            // geometry.loc is the content position; subtract decoration offset to get frame position.
+            let deco_offset = elem
+                .decoration_state()
+                .window_decorations()
+                .map(|d| d.decorations_offset())
+                .unwrap_or_default();
+            self.core.workspace_manager.relocate_window(&elem, geometry.loc - deco_offset, false);
             // TODO: We don't properly handle the order of override-redirect windows here,
             //       they are always mapped top and then never reordered.
         }
