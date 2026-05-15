@@ -102,7 +102,7 @@ impl FromStr for ActivateAction {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "none" => Ok(Self::None),
+            "none" | "click_to_focus" => Ok(Self::None),
             "bring" => Ok(Self::Bring),
             "switch" => Ok(Self::Switch),
             invalid => Err(anyhow!("Invalid activate_action '{invalid}'")),

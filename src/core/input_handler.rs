@@ -545,6 +545,10 @@ impl<BackendData: Backend> Xfwl4State<BackendData> {
             KeyAction::WmAction(WmShortcutAction::ShowDesktop) => (),       // TODO
             KeyAction::WmAction(WmShortcutAction::SwitchApplication) => (), // TODO
             KeyAction::WmAction(WmShortcutAction::SwitchWindow) => (),      // TODO
+            KeyAction::WmAction(WmShortcutAction::MoveLeft) => (),          // TODO: move window left by pixel
+            KeyAction::WmAction(WmShortcutAction::MoveRight) => (),         // TODO: move window right by pixel
+            KeyAction::WmAction(WmShortcutAction::MoveUp) => (),            // TODO: move window up by pixel
+            KeyAction::WmAction(WmShortcutAction::MoveDown) => (),          // TODO: move window down by pixel
 
             KeyAction::WmAction(
                 WmShortcutAction::Cancel | WmShortcutAction::Up | WmShortcutAction::Down | WmShortcutAction::Left | WmShortcutAction::Right,
