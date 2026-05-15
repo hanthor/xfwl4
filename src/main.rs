@@ -55,11 +55,10 @@ struct InitData<'l, BackendData: Backend + 'static> {
 }
 
 fn main() {
-    if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_env("XFWL4_LOG") {
-        tracing_subscriber::fmt().compact().with_env_filter(env_filter).init();
-    } else {
-        tracing_subscriber::fmt().compact().init();
-    }
+    let env_filter = tracing_subscriber::EnvFilter::try_from_env("XFWL4_LOG")
+        .or_else(|_| tracing_subscriber::EnvFilter::try_from_env("RUST_LOG"))
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    tracing_subscriber::fmt().compact().with_env_filter(env_filter).init();
 
     if let Err(err) = run() {
         error!("{}", err);
